@@ -1,0 +1,902 @@
+﻿<Window x:Class="ZZZ.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="簡易記帳" Width="1280" Height="800" MinWidth="1200" MinHeight="680"
+        WindowStartupLocation="CenterScreen" Background="{StaticResource BgBrush}"
+        FontFamily="{StaticResource AppFont}" Foreground="{StaticResource TextBrush}"
+        UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
+    <Window.Resources>
+        <!-- 側欄錢包項目 -->
+        <DataTemplate x:Key="WalletTemplate">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Border x:Name="Ico" Width="30" Height="30" CornerRadius="8" Background="{StaticResource GhostBrush}">
+                    <TextBlock x:Name="IcoText" Text="{Binding Icon}" Style="{StaticResource Icon}" FontSize="14"
+                               Foreground="{StaticResource MutedBrush}"/>
+                </Border>
+                <TextBlock x:Name="Name" Grid.Column="1" Text="{Binding Name}" FontSize="14" Margin="10,0,8,0"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                <TextBlock x:Name="Bal" Grid.Column="2" Text="{Binding BalanceText}" FontSize="13"
+                           Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+            </Grid>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Negative}" Value="True">
+                    <Setter TargetName="Bal" Property="Foreground" Value="{StaticResource ExpBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                    <Setter TargetName="Ico" Property="Background" Value="{StaticResource InkBrush}"/>
+                    <Setter TargetName="IcoText" Property="Foreground" Value="White"/>
+                    <Setter TargetName="Name" Property="FontWeight" Value="SemiBold"/>
+                    <Setter TargetName="Bal" Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <!-- 統計卡(白) -->
+        <Style x:Key="StatCard" TargetType="Border" BasedOn="{StaticResource Card}">
+            <Setter Property="Padding" Value="20,16"/>
+            <Setter Property="Margin" Value="14,0,0,0"/>
+        </Style>
+        <Style x:Key="StatLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="StatValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="24"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Margin" Value="0,10,0,0"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        </Style>
+        <Style x:Key="StatSub" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource SubtleBrush}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Margin" Value="0,4,0,0"/>
+        </Style>
+        <Style x:Key="StatIcon" TargetType="Border">
+            <Setter Property="Width" Value="28"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="CornerRadius" Value="14"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+        </Style>
+
+        <!-- 欠款列:已還清的整列淡化 -->
+        <Style x:Key="DebtRow" TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Done}" Value="True">
+                    <Setter Property="Opacity" Value="0.5"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 存錢目標卡片 -->
+        <Style x:Key="GoalItem" TargetType="ListBoxItem">
+            <Setter Property="Margin" Value="0,0,14,14"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource LineBrush}"
+                                BorderThickness="1" CornerRadius="12" Padding="20,18">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource LineStrongBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource InkBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <DataTemplate x:Key="GoalTemplate">
+            <StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Border x:Name="Avatar" Width="40" Height="40" CornerRadius="12" Background="{StaticResource InkBrush}">
+                        <TextBlock Text="{Binding Initial}" Foreground="White" FontSize="16" FontWeight="Bold"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock x:Name="Sub" Text="{Binding Note}" Foreground="{StaticResource SubtleBrush}" FontSize="12"
+                                   Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                    <Border x:Name="P" Grid.Column="2" Style="{StaticResource Pill}" VerticalAlignment="Top">
+                        <TextBlock x:Name="PT" Text="{Binding Status}" Style="{StaticResource PillText}"/>
+                    </Border>
+                </Grid>
+                <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                    <TextBlock Text="{Binding SavedText}" FontSize="24" FontWeight="Bold" VerticalAlignment="Bottom"/>
+                    <TextBlock Text="{Binding TargetText}" FontSize="14" Foreground="{StaticResource SubtleBrush}"
+                               VerticalAlignment="Bottom" Margin="6,0,0,3"/>
+                </StackPanel>
+                <Grid Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <ProgressBar x:Name="Bar" Style="{StaticResource SlimProgress}" Height="8" Value="{Binding Progress, Mode=OneWay}"/>
+                    <TextBlock Grid.Column="1" Text="{Binding PercentText}" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{StaticResource MutedBrush}" Margin="10,0,0,0" MinWidth="34" TextAlignment="Right"/>
+                </Grid>
+                <TextBlock x:Name="Hint" Text="{Binding Hint}" Foreground="{StaticResource MutedBrush}" FontSize="12"
+                           Margin="0,8,0,0" TextTrimming="CharacterEllipsis"/>
+                <Grid Margin="0,14,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Button Style="{StaticResource AccentButton}" Height="34" Padding="14,0" Click="GoalDeposit_Click" Tag="{Binding}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE710;" Style="{StaticResource Icon}" FontSize="11"/>
+                            <TextBlock Text="存入" Margin="6,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Grid.Column="1" Style="{StaticResource OutlineButton}" Height="34" Padding="14,0" Margin="8,0,0,0"
+                            Click="GoalWithdraw_Click" Tag="{Binding}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE738;" Style="{StaticResource Icon}" FontSize="11"/>
+                            <TextBlock Text="取出" Margin="6,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Grid.Column="3" Style="{StaticResource IconButton}" Content="&#xE70F;" Height="34" Width="34"
+                            ToolTip="編輯目標" Click="GoalEdit_Click" Tag="{Binding}"/>
+                    <Button Grid.Column="4" Style="{StaticResource IconButton}" Content="&#xE74D;" Height="34" Width="34"
+                            ToolTip="刪除目標" Click="GoalDelete_Click" Tag="{Binding}"/>
+                </Grid>
+            </StackPanel>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Note}" Value="">
+                    <Setter TargetName="Sub" Property="Text" Value="{Binding DeadlineText}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Late}" Value="True">
+                    <Setter TargetName="P" Property="Background" Value="{StaticResource WarnSoftBrush}"/>
+                    <Setter TargetName="PT" Property="Foreground" Value="{StaticResource WarnBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Done}" Value="True">
+                    <Setter TargetName="P" Property="Background" Value="{StaticResource IncSoftBrush}"/>
+                    <Setter TargetName="PT" Property="Foreground" Value="{StaticResource IncBrush}"/>
+                    <Setter TargetName="Bar" Property="Foreground" Value="{StaticResource IncBrush}"/>
+                    <Setter TargetName="Avatar" Property="Background" Value="{StaticResource IncBrush}"/>
+                    <Setter TargetName="Hint" Property="Foreground" Value="{StaticResource IncBrush}"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <DataTemplate x:Key="DepositTemplate">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Border x:Name="Ico" Width="32" Height="32" CornerRadius="16" Background="{StaticResource IncSoftBrush}">
+                    <TextBlock x:Name="IcoT" Text="&#xE74A;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource IncBrush}"/>
+                </Border>
+                <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}" FontSize="13" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding Date}" FontSize="11" Foreground="{StaticResource SubtleBrush}" Margin="0,2,0,0"/>
+                </StackPanel>
+                <TextBlock x:Name="Amt" Grid.Column="2" Text="{Binding AmountText}" FontSize="13" FontWeight="SemiBold"
+                           Foreground="{StaticResource IncBrush}" VerticalAlignment="Center"/>
+                <Button x:Name="Del" Grid.Column="3" Style="{StaticResource IconButton}" Content="&#xE74D;" Width="28" Height="28"
+                        FontSize="11" Margin="6,0,0,0" ToolTip="刪除這筆紀錄" Visibility="Hidden"
+                        Click="DepositDelete_Click" Tag="{Binding}"/>
+            </Grid>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsDeposit}" Value="False">
+                    <Setter TargetName="Ico" Property="Background" Value="{StaticResource ExpSoftBrush}"/>
+                    <Setter TargetName="IcoT" Property="Foreground" Value="{StaticResource ExpBrush}"/>
+                    <Setter TargetName="IcoT" Property="Text" Value="&#xE74B;"/>
+                    <Setter TargetName="Amt" Property="Foreground" Value="{StaticResource ExpBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                    <Setter TargetName="Del" Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="256"/>
+            <ColumnDefinition/>
+        </Grid.ColumnDefinitions>
+
+        <!-- ================= 側欄 ================= -->
+        <Border Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,1,0">
+            <DockPanel Margin="16,22,16,16">
+                <!-- 標誌 -->
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="6,0,0,26">
+                    <Border Width="40" Height="40" CornerRadius="11" Background="{StaticResource HeroBrush}">
+                        <TextBlock Text="&#xE8C7;" Style="{StaticResource Icon}" Foreground="White" FontSize="18"/>
+                    </Border>
+                    <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="簡易記帳" FontSize="18" FontWeight="Bold"/>
+                        <TextBlock x:Name="VersionText" Text="v1.0.0" Foreground="{StaticResource SubtleBrush}" FontSize="11" Margin="0,1,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- 底部功能 -->
+                <StackPanel DockPanel.Dock="Bottom">
+                    <Border Height="1" Background="{StaticResource LineBrush}" Margin="4,0,4,10"/>
+                    <Button Style="{StaticResource NavButton}" Click="ManageCategories_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE8EC;" Style="{StaticResource Icon}" FontSize="14" Width="20"/>
+                            <TextBlock Text="管理收入/支出分類" Margin="10,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource NavButton}" Click="Export_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xEDE1;" Style="{StaticResource Icon}" FontSize="14" Width="20"/>
+                            <TextBlock Text="匯出資料" Margin="10,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource NavButton}" Click="Import_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE8B5;" Style="{StaticResource Icon}" FontSize="14" Width="20"/>
+                            <TextBlock Text="匯入資料" Margin="10,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource NavButton}" Click="CheckUpdate_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE895;" Style="{StaticResource Icon}" FontSize="14" Width="20"/>
+                            <TextBlock Text="檢查更新" Margin="10,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource NavButton}" Click="About_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE946;" Style="{StaticResource Icon}" FontSize="14" Width="20"/>
+                            <TextBlock Text="關於" Margin="10,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+
+                <!-- 錢包操作 -->
+                <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,18">
+                    <Button Style="{StaticResource AccentButton}" Click="AddWallet_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE710;" Style="{StaticResource Icon}" FontSize="12"/>
+                            <TextBlock Text="新增錢包" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Grid Margin="0,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition/>
+                            <ColumnDefinition Width="8"/>
+                            <ColumnDefinition/>
+                        </Grid.ColumnDefinitions>
+                        <Button x:Name="RenameWalletBtn" Style="{StaticResource GhostButton}" Click="RenameWallet_Click" Padding="8,0">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE70F;" Style="{StaticResource Icon}" FontSize="12"/>
+                                <TextBlock Text="重新命名" Margin="6,0,0,0"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="DeleteWalletBtn" Grid.Column="2" Style="{StaticResource DangerButton}" Click="DeleteWallet_Click" Padding="8,0">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE74D;" Style="{StaticResource Icon}" FontSize="12"/>
+                                <TextBlock Text="刪除錢包" Margin="6,0,0,0"/>
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                </StackPanel>
+
+                <TextBlock DockPanel.Dock="Top" Text="錢包 / 戶頭" Foreground="{StaticResource SubtleBrush}"
+                           FontSize="12" FontWeight="SemiBold" Margin="8,0,0,10"/>
+                <ListBox x:Name="WalletList" Style="{StaticResource PlainList}" ItemContainerStyle="{StaticResource SoftItem}"
+                         ItemTemplate="{StaticResource WalletTemplate}" SelectionChanged="WalletList_SelectionChanged"/>
+            </DockPanel>
+        </Border>
+
+        <!-- ================= 主區域 ================= -->
+        <Grid Grid.Column="1" Margin="30,20,30,24">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition/>
+            </Grid.RowDefinitions>
+
+            <DockPanel Margin="0,0,0,18">
+                <TextBlock x:Name="TodayText" DockPanel.Dock="Right" Foreground="{StaticResource SubtleBrush}"
+                           FontSize="13" VerticalAlignment="Center"/>
+                <StackPanel Orientation="Horizontal">
+                    <RadioButton x:Name="TabRecords" Style="{StaticResource TabRadio}" Content="收支記錄"
+                                 IsChecked="True" GroupName="Tabs" Checked="Tab_Checked"/>
+                    <RadioButton x:Name="TabDebts" Style="{StaticResource TabRadio}" Content="欠款紀錄"
+                                 GroupName="Tabs" Checked="Tab_Checked"/>
+                    <RadioButton x:Name="TabGoals" Style="{StaticResource TabRadio}" Content="存錢目標"
+                                 GroupName="Tabs" Checked="Tab_Checked"/>
+                </StackPanel>
+            </DockPanel>
+
+            <!-- 收支記錄 -->
+            <Grid x:Name="RecordsView" Grid.Row="1">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition/>
+                </Grid.RowDefinitions>
+
+                <!-- 統計卡 -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.35*"/>
+                        <ColumnDefinition/>
+                        <ColumnDefinition/>
+                        <ColumnDefinition/>
+                    </Grid.ColumnDefinitions>
+                    <Border Background="{StaticResource HeroBrush}" CornerRadius="12" Padding="22,16">
+                        <StackPanel>
+                            <Grid>
+                                <TextBlock Text="目前總餘額" Foreground="#AEB6C3" FontSize="13"/>
+                                <TextBlock Text="&#xE8C7;" Style="{StaticResource Icon}" Foreground="#AEB6C3"
+                                           FontSize="16" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <TextBlock x:Name="BalanceText" Text="0" Foreground="White" FontSize="32" FontWeight="Bold"
+                                       Margin="0,6,0,0" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock x:Name="BalanceSub" Text="全部錢包" Foreground="#8B95A5" FontSize="12" Margin="0,2,0,0"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="1" Style="{StaticResource StatCard}">
+                        <StackPanel>
+                            <Grid>
+                                <TextBlock Text="收入" Style="{StaticResource StatLabel}"/>
+                                <Border Style="{StaticResource StatIcon}" Background="{StaticResource IncSoftBrush}">
+                                    <TextBlock Text="&#xE74A;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource IncBrush}"/>
+                                </Border>
+                            </Grid>
+                            <TextBlock x:Name="IncomeText" Text="0" Style="{StaticResource StatValue}" Foreground="{StaticResource IncBrush}"/>
+                            <TextBlock x:Name="IncomeSub" Style="{StaticResource StatSub}"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="2" Style="{StaticResource StatCard}">
+                        <StackPanel>
+                            <Grid>
+                                <TextBlock Text="支出" Style="{StaticResource StatLabel}"/>
+                                <Border Style="{StaticResource StatIcon}" Background="{StaticResource ExpSoftBrush}">
+                                    <TextBlock Text="&#xE74B;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource ExpBrush}"/>
+                                </Border>
+                            </Grid>
+                            <TextBlock x:Name="ExpenseText" Text="0" Style="{StaticResource StatValue}" Foreground="{StaticResource ExpBrush}"/>
+                            <TextBlock x:Name="ExpenseSub" Style="{StaticResource StatSub}"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="3" Style="{StaticResource StatCard}">
+                        <StackPanel>
+                            <Grid>
+                                <TextBlock Text="期間結餘" Style="{StaticResource StatLabel}"/>
+                                <Border Style="{StaticResource StatIcon}" Background="{StaticResource GhostBrush}">
+                                    <TextBlock Text="&#xE8EF;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource MutedBrush}"/>
+                                </Border>
+                            </Grid>
+                            <TextBlock x:Name="NetText" Text="0" Style="{StaticResource StatValue}"/>
+                            <TextBlock x:Name="NetSub" Style="{StaticResource StatSub}"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- 新增表單 -->
+                <Border Grid.Row="1" Style="{StaticResource Card}" Padding="20,16,20,18" Margin="0,16,0,16">
+                    <StackPanel>
+                        <TextBlock Text="新增一筆" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="136"/>
+                                <ColumnDefinition Width="124"/>
+                                <ColumnDefinition Width="112"/>
+                                <ColumnDefinition Width="116"/>
+                                <ColumnDefinition Width="112"/>
+                                <ColumnDefinition MinWidth="70"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="日期" Style="{StaticResource FieldLabel}"/>
+                                <DatePicker x:Name="RecDate"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Margin="0,0,10,0">
+                                <TextBlock Text="錢包" Style="{StaticResource FieldLabel}"/>
+                                <ComboBox x:Name="RecWallet">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/></DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Margin="0,0,10,0">
+                                <TextBlock Text="類型" Style="{StaticResource FieldLabel}"/>
+                                <Border Style="{StaticResource SegmentHost}">
+                                    <UniformGrid Rows="1">
+                                        <RadioButton x:Name="RecExpense" Style="{StaticResource Segment}" Content="支出"
+                                                     IsChecked="True" GroupName="RecType" Checked="RecType_Checked"/>
+                                        <RadioButton x:Name="RecIncome" Style="{StaticResource Segment}" Content="收入"
+                                                     GroupName="RecType" Checked="RecType_Checked"/>
+                                    </UniformGrid>
+                                </Border>
+                            </StackPanel>
+                            <StackPanel Grid.Column="3" Margin="0,0,10,0">
+                                <TextBlock Text="分類" Style="{StaticResource FieldLabel}"/>
+                                <ComboBox x:Name="RecCategory"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="4" Margin="0,0,10,0">
+                                <TextBlock Text="金額" Style="{StaticResource FieldLabel}"/>
+                                <TextBox x:Name="RecAmount" Tag="0" KeyDown="RecForm_KeyDown"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="5" Margin="0,0,10,0">
+                                <TextBlock Text="備註" Style="{StaticResource FieldLabel}"/>
+                                <TextBox x:Name="RecNote" Tag="選填" KeyDown="RecForm_KeyDown"/>
+                            </StackPanel>
+                            <Button Grid.Column="6" Style="{StaticResource AccentButton}" VerticalAlignment="Bottom"
+                                    Click="AddRecord_Click" Padding="20,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE710;" Style="{StaticResource Icon}" FontSize="12"/>
+                                    <TextBlock Text="新增" Margin="8,0,0,0"/>
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- 篩選列 -->
+                <DockPanel Grid.Row="2" Margin="0,0,0,12">
+                    <Button DockPanel.Dock="Right" Style="{StaticResource DangerButton}" Click="DeleteRecords_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE74D;" Style="{StaticResource Icon}" FontSize="12"/>
+                            <TextBlock Text="刪除選取" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <StackPanel Orientation="Horizontal">
+                        <Border Style="{StaticResource Card}" CornerRadius="10" Padding="3">
+                            <StackPanel Orientation="Horizontal">
+                                <Button Style="{StaticResource IconButton}" Content="&#xE76B;" Height="32" Width="32"
+                                        ToolTip="上個月" Click="PrevMonth_Click"/>
+                                <TextBox x:Name="MonthBox" Width="96" Height="32" BorderThickness="0" FontWeight="SemiBold"
+                                         HorizontalContentAlignment="Center" Tag="全部期間" KeyDown="MonthBox_KeyDown"
+                                         LostKeyboardFocus="MonthBox_LostFocus" ToolTip="輸入 YYYY-MM 後按 Enter;空白代表全部期間"/>
+                                <Button Style="{StaticResource IconButton}" Content="&#xE76C;" Height="32" Width="32"
+                                        ToolTip="下個月" Click="NextMonth_Click"/>
+                            </StackPanel>
+                        </Border>
+                        <Button Style="{StaticResource OutlineButton}" Content="本月" Margin="10,0,0,0" Click="ThisMonth_Click"/>
+                        <Button Style="{StaticResource OutlineButton}" Content="全部期間" Margin="8,0,0,0" Click="AllPeriod_Click"/>
+                        <TextBlock x:Name="RecCount" Foreground="{StaticResource SubtleBrush}" FontSize="13"
+                                   VerticalAlignment="Center" Margin="16,0,0,0"/>
+                    </StackPanel>
+                </DockPanel>
+
+                <!-- 記錄清單 -->
+                <Border Grid.Row="3" Style="{StaticResource Card}" Padding="6,2,6,6">
+                    <Grid>
+                        <DataGrid x:Name="RecordGrid" KeyDown="RecordGrid_KeyDown">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="日期" Binding="{Binding Date}" Width="115" ElementStyle="{StaticResource CellMuted}"/>
+                                <DataGridTextColumn Header="錢包" Binding="{Binding Wallet}" Width="120" ElementStyle="{StaticResource CellText}"/>
+                                <DataGridTemplateColumn Header="類型" Width="90">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Border x:Name="P" Style="{StaticResource Pill}" Background="{StaticResource ExpSoftBrush}">
+                                                <TextBlock x:Name="T" Text="{Binding Type}" Style="{StaticResource PillText}" Foreground="{StaticResource ExpBrush}"/>
+                                            </Border>
+                                            <DataTemplate.Triggers>
+                                                <DataTrigger Binding="{Binding IsIncome}" Value="True">
+                                                    <Setter TargetName="P" Property="Background" Value="{StaticResource IncSoftBrush}"/>
+                                                    <Setter TargetName="T" Property="Foreground" Value="{StaticResource IncBrush}"/>
+                                                </DataTrigger>
+                                            </DataTemplate.Triggers>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="分類" Binding="{Binding Category}" Width="110" ElementStyle="{StaticResource CellText}"/>
+                                <DataGridTemplateColumn Header="金額" Width="130" HeaderStyle="{StaticResource RightHeader}">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock x:Name="A" Text="{Binding AmountText}" Style="{StaticResource CellNumber}"
+                                                       FontWeight="SemiBold" Foreground="{StaticResource ExpBrush}"/>
+                                            <DataTemplate.Triggers>
+                                                <DataTrigger Binding="{Binding IsIncome}" Value="True">
+                                                    <Setter TargetName="A" Property="Foreground" Value="{StaticResource IncBrush}"/>
+                                                </DataTrigger>
+                                            </DataTemplate.Triggers>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="備註" Binding="{Binding Note}" Width="*" ElementStyle="{StaticResource CellMuted}"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <StackPanel x:Name="RecEmpty" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    IsHitTestVisible="False" Margin="0,40,0,0">
+                            <Border Width="56" Height="56" CornerRadius="28" Background="{StaticResource GhostBrush}">
+                                <TextBlock Text="&#xE9F9;" Style="{StaticResource Icon}" FontSize="22" Foreground="{StaticResource SubtleBrush}"/>
+                            </Border>
+                            <TextBlock Text="這段期間還沒有記錄" Foreground="{StaticResource MutedBrush}" FontSize="14"
+                                       HorizontalAlignment="Center" Margin="0,12,0,0"/>
+                            <TextBlock Text="在上方表單輸入第一筆收支吧" Foreground="{StaticResource SubtleBrush}" FontSize="12"
+                                       HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- 欠款紀錄 -->
+            <Grid x:Name="DebtsView" Grid.Row="1" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition/>
+                </Grid.RowDefinitions>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.35*"/>
+                        <ColumnDefinition/>
+                        <ColumnDefinition/>
+                    </Grid.ColumnDefinitions>
+                    <Border Background="{StaticResource HeroBrush}" CornerRadius="12" Padding="22,16">
+                        <StackPanel>
+                            <Grid>
+                                <TextBlock Text="淨額(別人欠我 − 我欠別人)" Foreground="#AEB6C3" FontSize="13"/>
+                                <TextBlock Text="&#xE716;" Style="{StaticResource Icon}" Foreground="#AEB6C3"
+                                           FontSize="16" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <TextBlock x:Name="DebtNetText" Text="0" Foreground="White" FontSize="32" FontWeight="Bold"
+                                       Margin="0,6,0,0" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock x:Name="DebtNetSub" Foreground="#8B95A5" FontSize="12" Margin="0,2,0,0"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="1" Style="{StaticResource StatCard}">
+                        <StackPanel>
+                            <Grid>
+                                <TextBlock Text="別人欠我(未還)" Style="{StaticResource StatLabel}"/>
+                                <Border Style="{StaticResource StatIcon}" Background="{StaticResource IncSoftBrush}">
+                                    <TextBlock Text="&#xE72A;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource IncBrush}"/>
+                                </Border>
+                            </Grid>
+                            <TextBlock x:Name="LentText" Text="0" Style="{StaticResource StatValue}" Foreground="{StaticResource IncBrush}"/>
+                            <TextBlock x:Name="LentSub" Style="{StaticResource StatSub}"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="2" Style="{StaticResource StatCard}">
+                        <StackPanel>
+                            <Grid>
+                                <TextBlock Text="我欠別人(未還)" Style="{StaticResource StatLabel}"/>
+                                <Border Style="{StaticResource StatIcon}" Background="{StaticResource ExpSoftBrush}">
+                                    <TextBlock Text="&#xE72B;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource ExpBrush}"/>
+                                </Border>
+                            </Grid>
+                            <TextBlock x:Name="OweText" Text="0" Style="{StaticResource StatValue}" Foreground="{StaticResource ExpBrush}"/>
+                            <TextBlock x:Name="OweSub" Style="{StaticResource StatSub}"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <Border Grid.Row="1" Style="{StaticResource Card}" Padding="20,16,20,18" Margin="0,16,0,16">
+                    <StackPanel>
+                        <TextBlock Text="新增欠款" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition MinWidth="70"/>
+                                <ColumnDefinition Width="176"/>
+                                <ColumnDefinition Width="96"/>
+                                <ColumnDefinition Width="142"/>
+                                <ColumnDefinition Width="142"/>
+                                <ColumnDefinition Width="1.2*" MinWidth="70"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="對象" Style="{StaticResource FieldLabel}"/>
+                                <TextBox x:Name="DebtPerson" Tag="姓名" KeyDown="DebtForm_KeyDown"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Margin="0,0,10,0">
+                                <TextBlock Text="方向" Style="{StaticResource FieldLabel}"/>
+                                <Border Style="{StaticResource SegmentHost}">
+                                    <UniformGrid Rows="1">
+                                        <RadioButton x:Name="DebtIOwe" Style="{StaticResource Segment}" Content="我欠別人"
+                                                     IsChecked="True" GroupName="DebtDir"/>
+                                        <RadioButton x:Name="DebtTheyOwe" Style="{StaticResource Segment}" Content="別人欠我"
+                                                     GroupName="DebtDir"/>
+                                    </UniformGrid>
+                                </Border>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Margin="0,0,10,0">
+                                <TextBlock Text="金額" Style="{StaticResource FieldLabel}"/>
+                                <TextBox x:Name="DebtAmount" Tag="0" KeyDown="DebtForm_KeyDown"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="3" Margin="0,0,10,0">
+                                <TextBlock Text="借款日期" Style="{StaticResource FieldLabel}"/>
+                                <DatePicker x:Name="DebtDate"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="4" Margin="0,0,10,0">
+                                <TextBlock Text="到期日(可空白)" Style="{StaticResource FieldLabel}"/>
+                                <DatePicker x:Name="DebtDue"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="5" Margin="0,0,10,0">
+                                <TextBlock Text="備註" Style="{StaticResource FieldLabel}"/>
+                                <TextBox x:Name="DebtNote" Tag="選填" KeyDown="DebtForm_KeyDown"/>
+                            </StackPanel>
+                            <Button Grid.Column="6" Style="{StaticResource AccentButton}" VerticalAlignment="Bottom"
+                                    Click="AddDebt_Click" Padding="20,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE710;" Style="{StaticResource Icon}" FontSize="12"/>
+                                    <TextBlock Text="新增" Margin="8,0,0,0"/>
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <DockPanel Grid.Row="2" Margin="0,0,0,12">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button Style="{StaticResource AccentButton}" Click="PayDebt_Click">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE8C7;" Style="{StaticResource Icon}" FontSize="12"/>
+                                <TextBlock Text="記錄還款" Margin="8,0,0,0"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource OutlineButton}" Margin="8,0,0,0" Click="SettleDebts_Click">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE8FB;" Style="{StaticResource Icon}" FontSize="12"/>
+                                <TextBlock Text="標記還清" Margin="8,0,0,0"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource DangerButton}" Margin="8,0,0,0" Click="DeleteDebts_Click">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE74D;" Style="{StaticResource Icon}" FontSize="12"/>
+                                <TextBlock Text="刪除" Margin="8,0,0,0"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <Border Style="{StaticResource SegmentHost}" Width="250">
+                            <UniformGrid Rows="1">
+                                <RadioButton x:Name="FilterOpen" Style="{StaticResource Segment}" Content="未還清"
+                                             IsChecked="True" GroupName="DebtFilter" Checked="DebtFilter_Checked"/>
+                                <RadioButton x:Name="FilterAll" Style="{StaticResource Segment}" Content="全部"
+                                             GroupName="DebtFilter" Checked="DebtFilter_Checked"/>
+                                <RadioButton x:Name="FilterDone" Style="{StaticResource Segment}" Content="已還清"
+                                             GroupName="DebtFilter" Checked="DebtFilter_Checked"/>
+                            </UniformGrid>
+                        </Border>
+                        <TextBlock x:Name="DebtCount" Foreground="{StaticResource SubtleBrush}" FontSize="13"
+                                   VerticalAlignment="Center" Margin="16,0,0,0"/>
+                    </StackPanel>
+                </DockPanel>
+
+                <Border Grid.Row="3" Style="{StaticResource Card}" Padding="6,2,6,6">
+                    <Grid>
+                        <DataGrid x:Name="DebtGrid" RowStyle="{StaticResource DebtRow}" KeyDown="DebtGrid_KeyDown"
+                                  MouseDoubleClick="DebtGrid_MouseDoubleClick">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="對象" Binding="{Binding Person}" Width="1*" MinWidth="80"
+                                                    ElementStyle="{StaticResource CellText}" FontWeight="SemiBold"/>
+                                <DataGridTemplateColumn Header="方向" Width="100">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Border x:Name="P" Style="{StaticResource Pill}" Background="{StaticResource IncSoftBrush}">
+                                                <TextBlock x:Name="T" Text="{Binding Direction}" Style="{StaticResource PillText}" Foreground="{StaticResource IncBrush}"/>
+                                            </Border>
+                                            <DataTemplate.Triggers>
+                                                <DataTrigger Binding="{Binding IOwe}" Value="True">
+                                                    <Setter TargetName="P" Property="Background" Value="{StaticResource ExpSoftBrush}"/>
+                                                    <Setter TargetName="T" Property="Foreground" Value="{StaticResource ExpBrush}"/>
+                                                </DataTrigger>
+                                            </DataTemplate.Triggers>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="總額" Binding="{Binding Amount, StringFormat=N0}" Width="84"
+                                                    HeaderStyle="{StaticResource RightHeader}" ElementStyle="{StaticResource CellNumber}"/>
+                                <DataGridTextColumn Header="已還" Binding="{Binding Paid, StringFormat=N0}" Width="84"
+                                                    HeaderStyle="{StaticResource RightHeader}" ElementStyle="{StaticResource CellNumber}"/>
+                                <DataGridTemplateColumn Header="未還" Width="90" HeaderStyle="{StaticResource RightHeader}">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock x:Name="R" Text="{Binding Rest, StringFormat=N0}" Style="{StaticResource CellNumber}"
+                                                       FontWeight="SemiBold" Foreground="{StaticResource IncBrush}"/>
+                                            <DataTemplate.Triggers>
+                                                <DataTrigger Binding="{Binding IOwe}" Value="True">
+                                                    <Setter TargetName="R" Property="Foreground" Value="{StaticResource ExpBrush}"/>
+                                                </DataTrigger>
+                                            </DataTemplate.Triggers>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="進度" Width="84">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <ProgressBar Style="{StaticResource SlimProgress}" Value="{Binding Progress, Mode=OneWay}"
+                                                         ToolTip="{Binding ProgressText}"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="日期" Binding="{Binding Date}" Width="104" ElementStyle="{StaticResource CellMuted}"/>
+                                <DataGridTextColumn Header="到期日" Binding="{Binding Due}" Width="104" ElementStyle="{StaticResource CellMuted}"/>
+                                <DataGridTemplateColumn Header="狀態" Width="82">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Border x:Name="P" Style="{StaticResource Pill}">
+                                                <TextBlock x:Name="T" Text="{Binding Status}" Style="{StaticResource PillText}"/>
+                                            </Border>
+                                            <DataTemplate.Triggers>
+                                                <DataTrigger Binding="{Binding Late}" Value="True">
+                                                    <Setter TargetName="P" Property="Background" Value="{StaticResource WarnSoftBrush}"/>
+                                                    <Setter TargetName="T" Property="Foreground" Value="{StaticResource WarnBrush}"/>
+                                                </DataTrigger>
+                                            </DataTemplate.Triggers>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="備註" Binding="{Binding Note}" Width="1.3*" ElementStyle="{StaticResource CellMuted}"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <StackPanel x:Name="DebtEmpty" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    IsHitTestVisible="False" Margin="0,40,0,0">
+                            <Border Width="56" Height="56" CornerRadius="28" Background="{StaticResource GhostBrush}">
+                                <TextBlock Text="&#xE73E;" Style="{StaticResource Icon}" FontSize="22" Foreground="{StaticResource SubtleBrush}"/>
+                            </Border>
+                            <TextBlock x:Name="DebtEmptyText" Text="沒有未還清的欠款" Foreground="{StaticResource MutedBrush}"
+                                       FontSize="14" HorizontalAlignment="Center" Margin="0,12,0,0"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- 存錢目標 -->
+            <Grid x:Name="GoalsView" Grid.Row="1" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition/>
+                </Grid.RowDefinitions>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.35*"/>
+                        <ColumnDefinition/>
+                        <ColumnDefinition/>
+                    </Grid.ColumnDefinitions>
+                    <Border Background="{StaticResource HeroBrush}" CornerRadius="12" Padding="22,16">
+                        <StackPanel>
+                            <Grid>
+                                <TextBlock Text="已存總額" Foreground="#AEB6C3" FontSize="13"/>
+                                <TextBlock Text="&#xE735;" Style="{StaticResource Icon}" Foreground="#AEB6C3"
+                                           FontSize="16" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <TextBlock x:Name="GoalSavedText" Text="0" Foreground="White" FontSize="32" FontWeight="Bold"
+                                       Margin="0,6,0,0" TextTrimming="CharacterEllipsis"/>
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ProgressBar x:Name="GoalTotalBar" Style="{StaticResource SlimProgress}" Foreground="White"
+                                             Background="#3A4555" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="GoalTotalPct" Grid.Column="1" Foreground="#AEB6C3" FontSize="12" Margin="10,0,0,0"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="1" Style="{StaticResource StatCard}">
+                        <StackPanel>
+                            <Grid>
+                                <TextBlock Text="目標總額" Style="{StaticResource StatLabel}"/>
+                                <Border Style="{StaticResource StatIcon}" Background="{StaticResource GhostBrush}">
+                                    <TextBlock Text="&#xE7C1;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource MutedBrush}"/>
+                                </Border>
+                            </Grid>
+                            <TextBlock x:Name="GoalTargetText" Text="0" Style="{StaticResource StatValue}"/>
+                            <TextBlock x:Name="GoalTargetSub" Style="{StaticResource StatSub}"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="2" Style="{StaticResource StatCard}">
+                        <StackPanel>
+                            <Grid>
+                                <TextBlock Text="已達成" Style="{StaticResource StatLabel}"/>
+                                <Border Style="{StaticResource StatIcon}" Background="{StaticResource IncSoftBrush}">
+                                    <TextBlock Text="&#xE73E;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource IncBrush}"/>
+                                </Border>
+                            </Grid>
+                            <TextBlock x:Name="GoalDoneText" Text="0" Style="{StaticResource StatValue}" Foreground="{StaticResource IncBrush}"/>
+                            <TextBlock x:Name="GoalDoneSub" Style="{StaticResource StatSub}"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <DockPanel Grid.Row="1" Margin="0,18,0,12">
+                    <Button DockPanel.Dock="Right" Style="{StaticResource AccentButton}" Click="AddGoal_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE710;" Style="{StaticResource Icon}" FontSize="12"/>
+                            <TextBlock Text="新增目標" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="我的目標" Style="{StaticResource SectionTitle}" FontSize="15"/>
+                        <TextBlock x:Name="GoalCount" Foreground="{StaticResource SubtleBrush}" FontSize="13"
+                                   VerticalAlignment="Center" Margin="10,0,0,0"/>
+                    </StackPanel>
+                </DockPanel>
+
+                <Grid Grid.Row="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition/>
+                        <ColumnDefinition Width="16"/>
+                        <ColumnDefinition Width="320"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 目標卡片 -->
+                    <ListBox x:Name="GoalList" Style="{StaticResource PlainList}" ItemContainerStyle="{StaticResource GoalItem}"
+                             ItemTemplate="{StaticResource GoalTemplate}" SelectionChanged="GoalList_SelectionChanged"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate><UniformGrid Columns="2" VerticalAlignment="Top"/></ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                    </ListBox>
+                    <Border x:Name="GoalEmpty" Style="{StaticResource Card}">
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Border Width="64" Height="64" CornerRadius="32" Background="{StaticResource GhostBrush}">
+                                <TextBlock Text="&#xE735;" Style="{StaticResource Icon}" FontSize="26" Foreground="{StaticResource SubtleBrush}"/>
+                            </Border>
+                            <TextBlock Text="還沒有存錢目標" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold"
+                                       HorizontalAlignment="Center" Margin="0,14,0,0"/>
+                            <TextBlock Text="設定一個目標,例如旅行基金、緊急預備金或新手機" Foreground="{StaticResource MutedBrush}"
+                                       FontSize="12" HorizontalAlignment="Center" Margin="0,6,0,16"/>
+                            <Button Style="{StaticResource AccentButton}" HorizontalAlignment="Center" Click="AddGoal_Click">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE710;" Style="{StaticResource Icon}" FontSize="12"/>
+                                    <TextBlock Text="建立第一個目標" Margin="8,0,0,0"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 存取紀錄 -->
+                    <Border Grid.Column="2" Style="{StaticResource Card}" Padding="18,16,10,10">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Top" Margin="0,0,8,12">
+                                <TextBlock Text="存取紀錄" Style="{StaticResource SectionTitle}"/>
+                                <TextBlock x:Name="GoalDetailName" Foreground="{StaticResource MutedBrush}" FontSize="12"
+                                           Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                            <Grid>
+                                <ListBox x:Name="DepositList" Style="{StaticResource PlainList}"
+                                         ItemTemplate="{StaticResource DepositTemplate}"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource SoftItem}">
+                                            <Setter Property="Height" Value="56"/>
+                                            <Setter Property="Margin" Value="0,0,8,2"/>
+                                            <Setter Property="Padding" Value="8,0,4,0"/>
+                                            <Setter Property="Cursor" Value="Arrow"/>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                </ListBox>
+                                <TextBlock x:Name="DepositEmpty" Text="選擇左側的目標查看紀錄" Foreground="{StaticResource SubtleBrush}"
+                                           FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           TextAlignment="Center" IsHitTestVisible="False"/>
+                            </Grid>
+                        </DockPanel>
+                    </Border>
+                </Grid>
+            </Grid>
+        </Grid>
+
+        <!-- 對話框開啟時的遮罩 -->
+        <Border x:Name="Dim" Grid.ColumnSpan="2" Background="#59111827" Visibility="Collapsed"/>
+    </Grid>
+</Window>
