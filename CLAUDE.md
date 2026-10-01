@@ -13,8 +13,13 @@ Run from `ZZZ/` (the project folder):
 ```bash
 dotnet build
 dotnet run
-dotnet publish -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
 ```
+
+Publishing (both are single-file and framework-dependent, so the user needs the .NET 10 Desktop Runtime):
+- ClickOnce needs full Visual Studio MSBuild, not `dotnet publish`: `msbuild ZZZ\ZZZ.csproj -restore -t:Publish -p:PublishProfile=ClickOnceProfile -p:Configuration=Release`. The profile is `ZZZ/Properties/PublishProfiles/ClickOnceProfile.pubxml`, and the output goes to `ZZZ/bin/Release/net10.0-windows/win-x64/app.publish/`. Locally, MSBuild is at `C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\amd64\MSBuild.exe`.
+- Portable exe: `dotnet publish ZZZ\ZZZ.csproj -c Release -r win-x64 -p:SelfContained=false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true`. Use `-p:SelfContained=false`. With the .NET 10 CLI, `--self-contained false` still bundles the runtime (~140 MB exe). `IncludeNativeLibrariesForSelfExtract` folds SQLite's `e_sqlite3.dll` into the exe.
+
+Releasing: pushing a `vX.Y.Z` tag (`git tag v1.2.0; git push origin v1.2.0`) runs `.github/workflows/release.yml` on the `windows-2025-vs2026` runner. It builds both packages with the version taken from the tag (`-p:Version` and `-p:ApplicationVersion=X.Y.Z.0`) and publishes them to a GitHub Release. ClickOnce auto-update is disabled because Release assets have no stable update URL. Instead, the in-app `Updater` polls the latest Release of `asdZzz-coder/tools`, which must stay public.
 
 There is no test project or linter. To run the app against throwaway data instead of the user's real database, set `LEDGER_DATA_DIR` before launching (PowerShell: `$env:LEDGER_DATA_DIR="C:\some\temp\dir"; dotnet run`). The build fails with a locked-file error if a `Ledger.exe` instance is still running.
 
@@ -29,4 +34,4 @@ There is no test project or linter. To run the app against throwaway data instea
 - **Dialogs**: don't use `MessageBox`. Use the static helpers on `DialogWindow` (`Info/Success/Error/Confirm/Prompt/Choose`). `Prompt` takes `Field[]` and an optional validator that returns an error string, so the dialog stays open on invalid input. While a dialog is open it dims `MainWindow` via `SetDim`.
 - **Styling**: everything is in `Themes.xaml` (merged in `App.xaml`). Use its brush keys (`InkBrush`, `IncBrush`/`ExpBrush` for income/expense, `*SoftBrush` backgrounds) and named styles (`AccentButton`, `GhostButton`, `OutlineButton`, `DangerButton`, `IconButton`, `Card`, `Pill`, `Segment`, `TabRadio`, …). The color rule: the chrome is ink/grayscale, and color is reserved for meaning (green = income/achieved, red = expense/danger, orange = overdue). Icons are glyphs from `Segoe Fluent Icons`/`Segoe MDL2 Assets` via the `Icon` TextBlock style. Implicit styles restyle `TextBox` (its `Tag` is placeholder text), `ComboBox`, `DatePicker`, `DataGrid`, and `ScrollBar`.
 - **Culture**: `App.OnStartup` sets a zh-TW culture whose `ShortDatePattern` is `yyyy-MM-dd`, so `DatePicker` and parsing use the DB date format. Amounts are parsed with `DialogWindow.TryParseAmount` (invariant culture, commas allowed).
-- **Updates**: `Updater.cs` checks GitHub Releases (`GitHubRepo` is still a placeholder). The current version comes from `<Version>` in the csproj.
+- **Updates**: `Updater.cs` checks GitHub Releases. The current version comes from the assembly version: `<Version>` in the csproj, overridden by CI from the tag.

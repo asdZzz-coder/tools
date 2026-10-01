@@ -8,8 +8,8 @@ namespace ZZZ
 
     public static class Updater
     {
-        // TODO: 改成你自己的 GitHub 帳號/倉庫名稱(倉庫需為 Public)
-        public const string GitHubRepo = "你的帳號/ledger";
+        // 發布版本的 GitHub 倉庫(需為 Public,未登入才查得到最新 Release)
+        public const string GitHubRepo = "asdZzz-coder/tools";
 
         public static string CurrentVersion { get; } =
             Assembly.GetExecutingAssembly().GetName().Version is { } v ? $"{v.Major}.{v.Minor}.{v.Build}" : "1.0.0";
