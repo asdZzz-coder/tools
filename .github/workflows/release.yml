@@ -48,8 +48,13 @@ jobs:
           $src = "ZZZ\bin\Release\net10.0-windows\win-x64\app.publish"
           $pkg = "dist\ClickOnce"
           New-Item -ItemType Directory -Force $pkg | Out-Null
-          Copy-Item "$src\setup.exe", "$src\Ledger.application" $pkg
+          # 不放 setup.exe:由 安裝.cmd 先複製到固定資料夾再安裝,避免 ClickOnce「已從其他位置安裝」的錯誤
+          Copy-Item -LiteralPath "installer\安裝.cmd" $pkg
+          Copy-Item "$src\Ledger.application" $pkg
           Copy-Item "$src\Application Files" $pkg -Recurse
+          foreach ($i in "安裝.cmd", "Ledger.application", "Application Files") {
+            if (-not (Test-Path -LiteralPath "$pkg\$i")) { throw "missing $i" }
+          }
           Compress-Archive -Path "$pkg\*" -DestinationPath "dist\Ledger-ClickOnce-v${{ steps.ver.outputs.version }}.zip"
 
       - name: 免安裝版(單一執行檔,不含 .NET 執行環境)
@@ -68,7 +73,7 @@ jobs:
           generate_release_notes: true
           body: |
             ## 下載
-            - **Ledger-ClickOnce-v${{ steps.ver.outputs.version }}.zip**:解壓縮後執行 `setup.exe` 安裝(會建立開始選單與桌面捷徑)。
+            - **Ledger-ClickOnce-v${{ steps.ver.outputs.version }}.zip**:解壓縮後執行 `安裝.cmd` 安裝(會建立開始選單與桌面捷徑)。
             - **Ledger.exe**:免安裝版,直接執行。
 
             兩種版本都需要 [.NET 10 桌面執行環境](https://dotnet.microsoft.com/download/dotnet/10.0)(未安裝時,開啟程式會提示下載)。

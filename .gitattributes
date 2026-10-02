@@ -1,0 +1,2 @@
+# 批次檔必須是 CRLF,否則 goto 標籤可能失效
+*.cmd text eol=crlf
