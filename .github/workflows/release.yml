@@ -73,7 +73,7 @@ jobs:
           generate_release_notes: true
           body: |
             ## 下載
-            - **Ledger-ClickOnce-v${{ steps.ver.outputs.version }}.zip**:解壓縮後執行 `安裝.cmd` 安裝(會建立開始選單與桌面捷徑)。
+            - **Ledger-ClickOnce-v${{ steps.ver.outputs.version }}.zip**:解壓縮後執行 `安裝.cmd` 安裝(會建立開始選單與桌面捷徑)。已安裝的電腦按「檢查更新」,會直接下載這個安裝包升級。
             - **Ledger.exe**:免安裝版,直接執行。
 
             兩種版本都需要 [.NET 10 桌面執行環境](https://dotnet.microsoft.com/download/dotnet/10.0)(未安裝時,開啟程式會提示下載)。

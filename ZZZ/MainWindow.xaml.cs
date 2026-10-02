@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows;
@@ -41,6 +42,7 @@ namespace ZZZ
             SourceInitialized += (_, _) => TintTitleBar();
             Loaded += (_, _) =>
             {
+                Updater.CleanupTemp(); // 清掉更新後遺留的下載檔
                 var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
                 t.Tick += async (_, _) => { t.Stop(); await CheckUpdate(silent: true); };
                 t.Start();
@@ -647,9 +649,30 @@ namespace ZZZ
             }
             var notes = info.Notes.Length > 400 ? info.Notes[..400] : info.Notes;
             if (notes == "") notes = "(無說明)";
-            if (DialogWindow.Confirm(this, "發現新版本",
-                    $"有新版本 {info.Version} 可用(目前 v{Updater.CurrentVersion})。\n\n{notes}\n\n要前往下載頁面嗎?", "前往下載"))
-                Process.Start(new ProcessStartInfo(info.Url) { UseShellExecute = true });
+            var head = $"有新版本 {info.Version} 可用(目前 v{Updater.CurrentVersion})。\n\n{notes}\n\n";
+
+            // 安裝版且 Release 附有安裝包:直接下載並升級;免安裝版或開發版:前往下載頁面
+            if (!Updater.IsInstalled || info.PackageUrl == null)
+            {
+                if (DialogWindow.Confirm(this, "發現新版本", head + "要前往下載頁面嗎?", "前往下載"))
+                    Process.Start(new ProcessStartInfo(info.Url) { UseShellExecute = true });
+                return;
+            }
+
+            if (!DialogWindow.Confirm(this, "發現新版本",
+                    head + "要現在更新嗎?下載完成後會開啟安裝視窗,完成後請重新開啟程式。\n記帳資料不會受影響。", "立即更新"))
+                return;
+            try
+            {
+                VersionText.Text = "下載更新中…";
+                await Updater.DownloadAndLaunchAsync(info, p => Dispatcher.Invoke(() => VersionText.Text = $"下載更新中… {p}%"));
+                Application.Current.Shutdown(); // 結束本程式,讓 ClickOnce 能覆蓋舊版
+            }
+            catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException or UnauthorizedAccessException or TaskCanceledException)
+            {
+                VersionText.Text = $"v{Updater.CurrentVersion}";
+                DialogWindow.Error(this, "更新失敗", ex.Message);
+            }
         }
     }
 }
