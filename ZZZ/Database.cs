@@ -164,6 +164,8 @@ namespace ZZZ
                  "date TEXT, amount REAL, note TEXT)");
             if (!Columns("records").Contains("wallet_id")) // 舊版資料升級:全部歸入第一個錢包
                 Exec("ALTER TABLE records ADD COLUMN wallet_id INTEGER DEFAULT 1");
+            if (!Columns("wallets").Contains("sort")) // 側欄錢包的排列順序
+                Exec("ALTER TABLE wallets ADD COLUMN sort INTEGER DEFAULT 0");
             if (!Columns("goals").Contains("repeat")) // 每年繳費的目標
                 Exec("ALTER TABLE goals ADD COLUMN repeat TEXT DEFAULT ''");
             EnsureDefaults();
@@ -198,7 +200,7 @@ namespace ZZZ
         // ---------- 錢包 ----------
         public List<Wallet> Wallets() => Query(
             "SELECT w.id, w.name, w.initial + COALESCE(SUM(CASE r.type WHEN '收入' THEN r.amount ELSE -r.amount END), 0) " +
-            "FROM wallets w LEFT JOIN records r ON r.wallet_id = w.id GROUP BY w.id ORDER BY w.id",
+            "FROM wallets w LEFT JOIN records r ON r.wallet_id = w.id GROUP BY w.id ORDER BY w.sort, w.id",
             r => new Wallet(r.GetInt64(0), Str(r, 1), Num(r, 2)));
 
         /// <returns>新錢包 id;名稱重複時回傳 null</returns>
@@ -206,11 +208,20 @@ namespace ZZZ
         {
             try
             {
-                Exec("INSERT INTO wallets(name, initial) VALUES(@p0,@p1)", name, initial);
+                Exec($"INSERT INTO wallets(name, initial, sort) VALUES(@p0,@p1,{NextWalletSort})", name, initial);
                 return (long)Scalar("SELECT last_insert_rowid()")!;
             }
             catch (SqliteException) { return null; }
         }
+
+        // 新錢包排在最後
+        const string NextWalletSort = "(SELECT COALESCE(MAX(sort), 0) + 1 FROM wallets)";
+
+        /// <summary>依傳入的順序重新排列錢包(側欄拖曳)。</summary>
+        public void ReorderWallets(IReadOnlyList<long> ids) => InTransaction(() =>
+        {
+            for (int i = 0; i < ids.Count; i++) Exec("UPDATE wallets SET sort=@p0 WHERE id=@p1", i + 1, ids[i]);
+        });
 
         public bool RenameWallet(long id, string name)
         {
@@ -356,7 +367,7 @@ namespace ZZZ
                     var name = r.Wallet == "" ? wallets.Keys.First() : r.Wallet;
                     if (!wallets.TryGetValue(name, out var wid))
                     {
-                        Exec("INSERT INTO wallets(name, initial) VALUES(@p0, 0)", name);
+                        Exec($"INSERT INTO wallets(name, initial, sort) VALUES(@p0, 0, {NextWalletSort})", name);
                         wallets[name] = wid = (long)Scalar("SELECT last_insert_rowid()")!;
                     }
                     if (r.Category != "") Exec("INSERT OR IGNORE INTO categories VALUES(@p0,@p1)", r.Type, r.Category);

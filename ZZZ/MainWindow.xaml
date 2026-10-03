@@ -13,6 +13,7 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <Border x:Name="Ico" Width="30" Height="30" CornerRadius="8" Background="{StaticResource GhostBrush}">
                     <TextBlock x:Name="IcoText" Text="{Binding Icon}" Style="{StaticResource Icon}" FontSize="14"
@@ -22,8 +23,19 @@
                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                 <TextBlock x:Name="Bal" Grid.Column="2" Text="{Binding BalanceText}" FontSize="13"
                            Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+                <!-- 滑過時提示可拖曳排序 -->
+                <TextBlock x:Name="Grip" Grid.Column="3" Text="&#xE76F;" Style="{StaticResource Icon}" FontSize="12"
+                           Foreground="{StaticResource SubtleBrush}" Margin="8,0,-4,0" Visibility="Hidden"
+                           ToolTip="拖曳可調整順序"/>
             </Grid>
             <DataTemplate.Triggers>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True"/>
+                        <Condition Binding="{Binding IsAll}" Value="False"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter TargetName="Grip" Property="Visibility" Value="Visible"/>
+                </MultiDataTrigger>
                 <DataTrigger Binding="{Binding Negative}" Value="True">
                     <Setter TargetName="Bal" Property="Foreground" Value="{StaticResource ExpBrush}"/>
                 </DataTrigger>
@@ -313,7 +325,9 @@
                 <TextBlock DockPanel.Dock="Top" Text="錢包 / 戶頭" Foreground="{StaticResource SubtleBrush}"
                            FontSize="12" FontWeight="SemiBold" Margin="8,0,0,10"/>
                 <ListBox x:Name="WalletList" Style="{StaticResource PlainList}" ItemContainerStyle="{StaticResource SoftItem}"
-                         ItemTemplate="{StaticResource WalletTemplate}" SelectionChanged="WalletList_SelectionChanged"/>
+                         ItemTemplate="{StaticResource WalletTemplate}" SelectionChanged="WalletList_SelectionChanged"
+                         AllowDrop="True" PreviewMouseLeftButtonDown="WalletList_PreviewMouseLeftButtonDown"
+                         PreviewMouseMove="WalletList_PreviewMouseMove" DragOver="WalletList_DragOver" Drop="WalletList_Drop"/>
             </DockPanel>
         </Border>
 

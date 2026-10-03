@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
@@ -15,6 +16,7 @@ namespace ZZZ
 {
     public record WalletItem(long? Id, string Name, double Balance)
     {
+        public bool IsAll => Id == null;
         public string Icon => Id == null ? "" : "";
         public string BalanceText => Balance.ToString("N0");
         public bool Negative => Balance < 0;
@@ -101,8 +103,8 @@ namespace ZZZ
         {
             var wallets = db.Wallets();
             if (selWallet != null && wallets.All(w => w.Id != selWallet)) selWallet = null;
-            var items = new List<WalletItem> { new(null, "全部錢包", wallets.Sum(w => w.Balance)) };
-            items.AddRange(wallets.Select(w => new WalletItem(w.Id, w.Name, w.Balance)));
+            var items = new ObservableCollection<WalletItem> { new(null, "全部錢包", wallets.Sum(w => w.Balance)) };
+            foreach (var w in wallets) items.Add(new WalletItem(w.Id, w.Name, w.Balance));
             loadingWallets = true;
             WalletList.ItemsSource = items;
             WalletList.SelectedItem = items.First(i => i.Id == selWallet);
@@ -118,6 +120,57 @@ namespace ZZZ
             if (selWallet != null && RecWallet.ItemsSource is List<Wallet> ws)
                 RecWallet.SelectedItem = ws.FirstOrDefault(w => w.Id == selWallet);
             RefreshRecords();
+        }
+
+        // ---------- 拖曳錢包調整順序(「全部錢包」固定在最上面) ----------
+        Point dragStart;
+        WalletItem? dragItem;
+
+        void WalletList_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            dragStart = e.GetPosition(WalletList);
+            dragItem = (ItemsControl.ContainerFromElement(WalletList, (DependencyObject)e.OriginalSource) as ListBoxItem)
+                ?.DataContext as WalletItem;
+            if (dragItem?.IsAll == true) dragItem = null;
+        }
+
+        void WalletList_PreviewMouseMove(object sender, MouseEventArgs e)
+        {
+            if (dragItem == null || e.LeftButton != MouseButtonState.Pressed) return;
+            var d = e.GetPosition(WalletList) - dragStart;
+            if (Math.Abs(d.X) < SystemParameters.MinimumHorizontalDragDistance &&
+                Math.Abs(d.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+            var item = dragItem;
+            dragItem = null;
+            var items = (ObservableCollection<WalletItem>)WalletList.ItemsSource;
+            var before = items.Select(i => i.Id).ToList();
+            // 拖曳中 DragOver 會直接移動清單項目當作預覽,放開後再存檔;拖到清單外放開則還原
+            var result = DragDrop.DoDragDrop(WalletList, item, DragDropEffects.Move);
+            var after = items.Select(i => i.Id).ToList();
+            if (result != DragDropEffects.Move) { RefreshSidebar(); return; }
+            if (after.SequenceEqual(before)) return;
+            db.ReorderWallets(after.OfType<long>().ToList());
+            RefreshAll(); // 新增記錄的錢包下拉選單也跟著換順序
+        }
+
+        void WalletList_DragOver(object sender, DragEventArgs e)
+        {
+            e.Effects = DragDropEffects.None;
+            e.Handled = true;
+            if (e.Data.GetData(typeof(WalletItem)) is not WalletItem item) return;
+            e.Effects = DragDropEffects.Move;
+            var items = (ObservableCollection<WalletItem>)WalletList.ItemsSource;
+            var target = (ItemsControl.ContainerFromElement(WalletList, (DependencyObject)e.OriginalSource) as ListBoxItem)
+                ?.DataContext as WalletItem;
+            if (target == null || target == item) return;
+            int from = items.IndexOf(item), to = Math.Max(items.IndexOf(target), 1); // 不能排到「全部錢包」上面
+            if (from != to) items.Move(from, to);
+        }
+
+        void WalletList_Drop(object sender, DragEventArgs e)
+        {
+            e.Effects = e.Data.GetDataPresent(typeof(WalletItem)) ? DragDropEffects.Move : DragDropEffects.None;
+            e.Handled = true;
         }
 
         void AddWallet_Click(object sender, RoutedEventArgs e)
