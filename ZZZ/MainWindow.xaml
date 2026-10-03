@@ -1,7 +1,7 @@
 ﻿<Window x:Class="ZZZ.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="簡易記帳" Width="1280" Height="800" MinWidth="1200" MinHeight="680"
+        Title="簡易記帳" Icon="Assets/AppIcon.ico" Width="1280" Height="800" MinWidth="1200" MinHeight="680"
         WindowStartupLocation="CenterScreen" Background="{StaticResource BgBrush}"
         FontFamily="{StaticResource AppFont}" Foreground="{StaticResource TextBrush}"
         UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
@@ -227,9 +227,7 @@
             <DockPanel Margin="16,22,16,16">
                 <!-- 標誌 -->
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="6,0,0,26">
-                    <Border Width="40" Height="40" CornerRadius="11" Background="{StaticResource HeroBrush}">
-                        <TextBlock Text="&#xE8C7;" Style="{StaticResource Icon}" Foreground="White" FontSize="18"/>
-                    </Border>
+                    <Image Source="Assets/AppIcon.png" Width="44" Height="44" RenderOptions.BitmapScalingMode="HighQuality"/>
                     <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
                         <TextBlock Text="簡易記帳" FontSize="18" FontWeight="Bold"/>
                         <TextBlock x:Name="VersionText" Text="v1.0.0" Foreground="{StaticResource SubtleBrush}" FontSize="11" Margin="0,1,0,0"/>
