@@ -1,12 +1,14 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 
 namespace ZZZ
 {
-    public record Field(string Label, string Initial = "", string Hint = "");
+    /// <param name="IsDate">日期欄:可點日曆選,也可直接輸入 YYYY-MM-DD;值為輸入框裡的文字</param>
+    public record Field(string Label, string Initial = "", string Hint = "", bool IsDate = false);
 
     /// <summary>統一風格的訊息/確認/輸入對話框。</summary>
     public partial class DialogWindow : Window
@@ -21,7 +23,74 @@ namespace ZZZ
 
         void OnDrag(object sender, MouseButtonEventArgs e)
         {
+            // 日曆彈出視窗裡的點擊也會傳到這裡,只有點在對話框本身才拖曳
+            if (e.OriginalSource is Visual v && PresentationSource.FromVisual(v) != PresentationSource.FromVisual(this)) return;
             if (e.ButtonState == MouseButtonState.Pressed) DragMove();
+        }
+
+        /// <summary>
+        /// 日期欄:一般輸入框加上日曆按鈕。不用 DatePicker,因為它會把打錯的日期默默清掉,
+        /// 這裡打什麼就保留什麼,交給 validate 檢查;在日曆點選則填入 yyyy-MM-dd。
+        /// </summary>
+        FrameworkElement DateBox(TextBox tb)
+        {
+            tb.Padding = new Thickness(10, 0, 38, 0); // 讓出日曆按鈕的位置
+            var cal = new System.Windows.Controls.Calendar
+            {
+                BorderThickness = new Thickness(0), Background = Brushes.Transparent,
+                LayoutTransform = new ScaleTransform(1.25, 1.25), // 預設日曆太小,放大好點
+            };
+            var popup = new Popup
+            {
+                PlacementTarget = tb, Placement = PlacementMode.Bottom, VerticalOffset = 2,
+                StaysOpen = false, AllowsTransparency = true,
+                Child = new Border
+                {
+                    Background = Brushes.White, CornerRadius = new CornerRadius(10), Padding = new Thickness(6),
+                    BorderBrush = (Brush)FindResource("LineBrush"), BorderThickness = new Thickness(1),
+                    Margin = new Thickness(0, 0, 12, 12), Child = cal,
+                    Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 16, ShadowDepth = 3, Opacity = 0.18 },
+                },
+            };
+            var btn = new Button
+            {
+                Style = (Style)FindResource("IconButton"), Content = "", Width = 32, Height = 30, FontSize = 13,
+                Margin = new Thickness(0, 0, 3, 0), HorizontalAlignment = HorizontalAlignment.Right,
+                Focusable = false, ToolTip = "選擇日期",
+            };
+            btn.Click += (_, _) =>
+            {
+                if (popup.IsOpen) { popup.IsOpen = false; return; }
+                var day = DateTime.TryParse(tb.Text, out var d) ? d.Date : DateTime.Today;
+                cal.SelectedDate = DateTime.TryParse(tb.Text, out _) ? day : null;
+                cal.DisplayDate = day;
+                popup.IsOpen = true;
+            };
+            void Apply()
+            {
+                if (cal.SelectedDate is not DateTime picked) return;
+                tb.Text = picked.ToString("yyyy-MM-dd");
+                popup.IsOpen = false;
+                tb.Focus();
+                tb.CaretIndex = tb.Text.Length;
+            }
+            // 點日期才填入(點同一天也算);切換月份或用方向鍵移動不會關閉
+            cal.PreviewMouseUp += (_, e) =>
+            {
+                if (Mouse.Captured is CalendarItem) Mouse.Capture(null); // Calendar 會抓住滑鼠,不放開的話要多點一下才有反應
+                for (var o = e.OriginalSource as DependencyObject; o != null && o != cal; o = VisualTreeHelper.GetParent(o))
+                    if (o is CalendarDayButton) { Apply(); return; }
+            };
+            cal.KeyDown += (_, e) =>
+            {
+                if (e.Key == Key.Enter) { Apply(); e.Handled = true; }
+                else if (e.Key == Key.Escape) { popup.IsOpen = false; tb.Focus(); e.Handled = true; }
+            };
+            var grid = new Grid();
+            grid.Children.Add(tb);
+            grid.Children.Add(btn);
+            grid.Children.Add(popup);
+            return grid;
         }
 
         void OnOk(object sender, RoutedEventArgs e)
@@ -106,7 +175,7 @@ namespace ZZZ
                 });
                 var tb = new TextBox { Text = f.Initial, Tag = f.Hint };
                 d.boxes.Add(tb);
-                d.Fields.Children.Add(tb);
+                d.Fields.Children.Add(f.IsDate ? d.DateBox(tb) : tb);
             }
             d.Loaded += (_, _) =>
             {

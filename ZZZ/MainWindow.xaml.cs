@@ -497,8 +497,10 @@ namespace ZZZ
             GoalTargetSub.Text = $"{goals.Count} 個目標 · 還差 {Money(goals.Sum(g => g.Remaining))}";
             int done = goals.Count(g => g.Done);
             GoalDoneText.Text = $"{done} / {goals.Count}";
-            int late = goals.Count(g => g.Late);
-            GoalDoneSub.Text = late > 0 ? $"{late} 個目標已過期" : done == goals.Count && done > 0 ? "全部達成,太棒了!" : "繼續加油";
+            int toPay = goals.Count(g => g.Yearly && g.Late), late = goals.Count(g => !g.Yearly && g.Late);
+            GoalDoneSub.Text = toPay > 0 ? $"{toPay} 筆費用該繳了"
+                : late > 0 ? $"{late} 個目標已過期"
+                : done == goals.Count && done > 0 ? "全部達成,太棒了!" : "繼續加油";
             GoalCount.Text = $"共 {goals.Count} 個";
             GoalEmpty.Visibility = goals.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             RefreshDeposits();
@@ -525,28 +527,50 @@ namespace ZZZ
 
         static GoalRow GoalOf(object sender) => (GoalRow)((FrameworkElement)sender).Tag;
 
-        static string? ValidateGoal(string[] v)
+        /// <summary>目標的輸入欄位:名稱、金額、日期、備註(每年繳費的日期必填)。</summary>
+        static (Field[] Fields, Func<string[], string?> Validate) GoalForm(bool yearly, GoalRow? g = null)
         {
-            if (v[0] == "") return "請輸入目標名稱";
-            if (!DialogWindow.TryParseAmount(v[1], out var t) || t <= 0) return "目標金額需大於 0";
-            if (v[2] != "" && !DateTime.TryParse(v[2], out _)) return "目標日期格式為 YYYY-MM-DD,或留空";
-            return null;
+            Field[] fields = yearly
+            ? [
+                new Field("費用名稱", g?.Name ?? "", "例如:汽車牌照稅、燃料稅、汽車保險"),
+                new Field("每年金額", g?.Target.ToString("0.##") ?? "", "例如:11230"),
+                new Field("下次繳費日", g?.Deadline ?? "", "點日曆選擇,或直接輸入 YYYY-MM-DD", IsDate: true),
+                new Field("備註(可空白)", g?.Note ?? ""),
+            ]
+            : [
+                new Field("目標名稱", g?.Name ?? "", "例如:日本旅行、緊急預備金"),
+                new Field("目標金額", g?.Target.ToString("0.##") ?? "", "例如:50000"),
+                new Field("目標日期(可空白)", g?.Deadline ?? "", "點日曆選擇,或直接輸入 YYYY-MM-DD", IsDate: true),
+                new Field("備註(可空白)", g?.Note ?? ""),
+            ];
+            return (fields, v =>
+            {
+                if (v[0] == "") return yearly ? "請輸入費用名稱" : "請輸入目標名稱";
+                if (!DialogWindow.TryParseAmount(v[1], out var t) || t <= 0) return yearly ? "每年金額需大於 0" : "目標金額需大於 0";
+                if (yearly && v[2] == "") return "請選擇下次繳費日";
+                if (v[2] != "" && !DateTime.TryParse(v[2], out _)) return "日期格式為 YYYY-MM-DD" + (yearly ? "" : ",或留空");
+                return null;
+            });
         }
 
         static string NormalizeDate(string s) => DateTime.TryParse(s, out var d) ? d.ToString("yyyy-MM-dd") : "";
 
         void AddGoal_Click(object sender, RoutedEventArgs e)
         {
-            var v = DialogWindow.Prompt(this, "新增存錢目標", "設定想存到的金額,也可以加上目標日期。",
+            var kind = DialogWindow.Choose(this, "新增存錢目標", "要存哪一種?",
             [
-                new Field("目標名稱", "", "例如:日本旅行、緊急預備金"),
-                new Field("目標金額", "", "例如:50000"),
-                new Field("目標日期(可空白)", "", "YYYY-MM-DD"),
-                new Field("備註(可空白)"),
-            ], ValidateGoal, "建立");
+                ("", "一次性目標", "存到目標金額就完成,例如日本旅行、緊急預備金、新手機。"),
+                ("", "每年繳費", "每年固定要繳的費用,例如汽車牌照稅、燃料稅、保險費。繳費後自動換到下一年。"),
+            ]);
+            if (kind == null) return;
+            bool yearly = kind == 1;
+            var (fields, validate) = GoalForm(yearly);
+            var v = DialogWindow.Prompt(this, yearly ? "新增每年繳費" : "新增存錢目標",
+                yearly ? "設定每年要繳的金額與繳費日,程式會算出每個月該存多少。" : "設定想存到的金額,也可以加上目標日期。",
+                fields, validate, "建立");
             if (v == null) return;
             DialogWindow.TryParseAmount(v[1], out var target);
-            var id = db.AddGoal(v[0], target, NormalizeDate(v[2]), v[3]);
+            var id = db.AddGoal(v[0], target, NormalizeDate(v[2]), v[3], yearly ? Database.Yearly : "");
             RefreshGoals(id);
         }
 
@@ -554,16 +578,37 @@ namespace ZZZ
         {
             var g = GoalOf(sender);
             GoalList.SelectedItem = g;
-            var v = DialogWindow.Prompt(this, "編輯目標", "",
-            [
-                new Field("目標名稱", g.Name),
-                new Field("目標金額", g.Target.ToString("0.##")),
-                new Field("目標日期(可空白)", g.Deadline, "YYYY-MM-DD"),
-                new Field("備註(可空白)", g.Note),
-            ], ValidateGoal, "儲存");
+            var (fields, validate) = GoalForm(g.Yearly, g);
+            var v = DialogWindow.Prompt(this, g.Yearly ? "編輯每年繳費" : "編輯目標", "", fields, validate, "儲存");
             if (v == null) return;
             DialogWindow.TryParseAmount(v[1], out var target);
             db.UpdateGoal(g.Id, v[0], target, NormalizeDate(v[2]), v[3]);
+            RefreshGoals(g.Id);
+        }
+
+        void GoalPay_Click(object sender, RoutedEventArgs e)
+        {
+            var g = GoalOf(sender);
+            GoalList.SelectedItem = g;
+            var next = DateTime.TryParse(g.Deadline, out var due) ? due.AddYears(1) : DateTime.Today.AddYears(1);
+            var v = DialogWindow.Prompt(this, $"繳費:{g.Name}",
+                $"目前已存 {Money(g.Saved)}。繳費金額會從已存金額扣除,下次繳費日改為 {next:yyyy-MM-dd}。",
+            [
+                new Field("繳費金額", g.Target.ToString("0.##")),
+                new Field("繳費日期", DateTime.Today.ToString("yyyy-MM-dd"), "點日曆選擇,或直接輸入 YYYY-MM-DD", IsDate: true),
+            ], vals =>
+            {
+                if (!DialogWindow.TryParseAmount(vals[0], out var a) || a <= 0) return "請輸入大於 0 的金額";
+                if (!DateTime.TryParse(vals[1], out _)) return "日期格式為 YYYY-MM-DD";
+                return null;
+            }, "已繳費");
+            if (v == null) return;
+            DialogWindow.TryParseAmount(v[0], out var paid);
+            // 已存的不夠時只扣到 0,不足的部分當作從別處付
+            var withdraw = Math.Min(paid, Math.Max(g.Saved, 0));
+            var year = due != default ? due.Year : DateTime.Today.Year;
+            var note = $"{year} 年繳費" + (paid > withdraw + 0.0001 ? $"(實繳 {Money(paid)})" : "");
+            db.PayYearly(g.Id, NormalizeDate(v[1]), withdraw, note, next.ToString("yyyy-MM-dd"));
             RefreshGoals(g.Id);
         }
 
@@ -590,7 +635,7 @@ namespace ZZZ
             var v = DialogWindow.Prompt(this, deposit ? "存入" : "取出", msg,
             [
                 new Field("金額", "", deposit && g.Remaining > 0 ? $"還差 {Money(g.Remaining)}" : $"最多 {Money(g.Saved)}"),
-                new Field("日期", DateTime.Today.ToString("yyyy-MM-dd"), "YYYY-MM-DD"),
+                new Field("日期", DateTime.Today.ToString("yyyy-MM-dd"), "點日曆選擇,或直接輸入 YYYY-MM-DD", IsDate: true),
                 new Field("備註(可空白)", "", deposit ? "例如:薪水提撥" : "例如:臨時急用"),
             ], vals =>
             {
@@ -605,7 +650,12 @@ namespace ZZZ
             db.AddDeposit(g.Id, NormalizeDate(v[1]), deposit ? amt : -amt, v[2]);
             RefreshGoals(g.Id);
             if (deposit && !wasDone && g.Saved + amt >= g.Target - 0.0001)
-                DialogWindow.Success(this, "目標達成!", $"恭喜!「{g.Name}」已經存到 {Money(g.Target)} 了。");
+            {
+                if (g.Yearly)
+                    DialogWindow.Success(this, "已存足!", $"「{g.Name}」今年的 {Money(g.Target)} 已經存好了。\n繳完費後按「繳費」,就會換到下一年。");
+                else
+                    DialogWindow.Success(this, "目標達成!", $"恭喜!「{g.Name}」已經存到 {Money(g.Target)} 了。");
+            }
         }
 
         void DepositDelete_Click(object sender, RoutedEventArgs e)

@@ -24,25 +24,38 @@ namespace ZZZ
         public string ProgressText => $"已還 {Progress:P0}";
     }
 
-    public record GoalRow(long Id, string Name, double Target, double Saved, string Deadline, string Note, int Count)
+    /// <param name="Repeat">空字串為一次性目標;<see cref="Database.Yearly"/> 為每年繳費(Deadline 是下次繳費日)</param>
+    public record GoalRow(long Id, string Name, double Target, double Saved, string Deadline, string Note, int Count,
+                          string Repeat = "")
     {
+        public bool Yearly => Repeat == Database.Yearly;
         public double Progress => Target <= 0 ? 0 : Math.Clamp(Saved / Target, 0, 1);
         public string PercentText => $"{Progress:P0}";
         public double Remaining => Math.Max(Target - Saved, 0);
         public bool Done => Saved >= Target - 0.0001;
         public int? DaysLeft => DateTime.TryParse(Deadline, out var d) ? (int)(d.Date - DateTime.Today).TotalDays : null;
-        public bool Late => !Done && DaysLeft < 0;
+        /// <summary>一次性目標:過了目標日還沒存到;每年繳費:過了繳費日還沒按「繳費」。</summary>
+        public bool Late => (Yearly || !Done) && DaysLeft < 0;
         public string Initial => Name.Length > 0 ? Name[..1] : "?";
         public string SavedText => Saved.ToString("N0");
         public string TargetText => "/ " + Target.ToString("N0");
-        public string Status => Done ? "已達成" : Late ? "已過期" : "進行中";
-        public string DeadlineText => Deadline != "" ? $"目標日 {Deadline}" : "未設定目標日期";
+        public string Status => Yearly
+            ? Late ? "該繳費了" : Done ? "已存足" : "每年繳費"
+            : Done ? "已達成" : Late ? "已過期" : "進行中";
+        public string DeadlineText => Yearly && DateTime.TryParse(Deadline, out var d)
+            ? $"每年 {d.Month}/{d.Day} 繳費"
+            : Deadline != "" ? $"目標日 {Deadline}" : "未設定目標日期";
+        /// <summary>卡片名稱下方那一行:每年繳費一律顯示繳費日,一次性目標有備註就顯示備註。</summary>
+        public string SubText => Yearly ? (Note != "" ? $"{DeadlineText} · {Note}" : DeadlineText)
+                                        : Note != "" ? Note : DeadlineText;
 
         /// <summary>例如「還差 38,000 · 剩 120 天 · 每月約存 9,500」</summary>
         public string Hint
         {
             get
             {
+                if (Yearly && Late) return $"繳費日已過 {-DaysLeft} 天,繳完請按「繳費」";
+                if (Yearly && Done) return DaysLeft is int left ? $"今年的錢已存足 · {(left == 0 ? "今天繳費" : $"{left} 天後繳費")}" : "今年的錢已存足";
                 if (Done) return Saved > Target ? $"超出目標 {Saved - Target:N0}" : "恭喜!目標已達成";
                 var parts = new List<string> { $"還差 {Remaining:N0}" };
                 if (DaysLeft is int days)
@@ -72,6 +85,7 @@ namespace ZZZ
     {
         public const string Income = "收入", Expense = "支出";
         public const string IOwe = "我欠別人", TheyOwe = "別人欠我";
+        public const string Yearly = "每年"; // goals.repeat
 
         static readonly string[] DefaultExpense = ["餐飲", "交通", "購物", "居住", "娛樂", "醫療", "其他"];
         static readonly string[] DefaultIncome = ["薪資", "獎金", "投資", "其他"];
@@ -150,6 +164,8 @@ namespace ZZZ
                  "date TEXT, amount REAL, note TEXT)");
             if (!Columns("records").Contains("wallet_id")) // 舊版資料升級:全部歸入第一個錢包
                 Exec("ALTER TABLE records ADD COLUMN wallet_id INTEGER DEFAULT 1");
+            if (!Columns("goals").Contains("repeat")) // 每年繳費的目標
+                Exec("ALTER TABLE goals ADD COLUMN repeat TEXT DEFAULT ''");
             EnsureDefaults();
         }
 
@@ -254,16 +270,23 @@ namespace ZZZ
 
         // ---------- 存錢目標 ----------
         public List<GoalRow> Goals() => Query(
-            "SELECT g.id, g.name, g.target, COALESCE(SUM(d.amount), 0), g.deadline, g.note, COUNT(d.id) " +
+            "SELECT g.id, g.name, g.target, COALESCE(SUM(d.amount), 0), g.deadline, g.note, COUNT(d.id), g.repeat " +
             "FROM goals g LEFT JOIN goal_deposits d ON d.goal_id = g.id GROUP BY g.id ORDER BY g.id",
-            r => new GoalRow(r.GetInt64(0), Str(r, 1), Num(r, 2), Num(r, 3), Str(r, 4), Str(r, 5), r.GetInt32(6)));
+            r => new GoalRow(r.GetInt64(0), Str(r, 1), Num(r, 2), Num(r, 3), Str(r, 4), Str(r, 5), r.GetInt32(6), Str(r, 7)));
 
-        public long AddGoal(string name, double target, string deadline, string note)
+        public long AddGoal(string name, double target, string deadline, string note, string repeat = "")
         {
-            Exec("INSERT INTO goals(name,target,deadline,note,created) VALUES(@p0,@p1,@p2,@p3,@p4)",
-                 name, target, deadline, note, DateTime.Today.ToString("yyyy-MM-dd"));
+            Exec("INSERT INTO goals(name,target,deadline,note,created,repeat) VALUES(@p0,@p1,@p2,@p3,@p4,@p5)",
+                 name, target, deadline, note, DateTime.Today.ToString("yyyy-MM-dd"), repeat);
             return (long)Scalar("SELECT last_insert_rowid()")!;
         }
+
+        /// <summary>每年繳費:從已存金額扣掉繳費金額(扣到 0 為止),並把繳費日延後一年。</summary>
+        public void PayYearly(long id, string date, double withdraw, string note, string nextDeadline) => InTransaction(() =>
+        {
+            if (withdraw > 0) AddDeposit(id, date, -withdraw, note);
+            Exec("UPDATE goals SET deadline=@p0 WHERE id=@p1", nextDeadline, id);
+        });
 
         public void UpdateGoal(long id, string name, double target, string deadline, string note) =>
             Exec("UPDATE goals SET name=@p0, target=@p1, deadline=@p2, note=@p3 WHERE id=@p4",

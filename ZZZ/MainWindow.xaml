@@ -113,7 +113,7 @@
                     </Border>
                     <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Center">
                         <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock x:Name="Sub" Text="{Binding Note}" Foreground="{StaticResource SubtleBrush}" FontSize="12"
+                        <TextBlock x:Name="Sub" Text="{Binding SubText}" Foreground="{StaticResource SubtleBrush}" FontSize="12"
                                    Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
                     </StackPanel>
                     <Border x:Name="P" Grid.Column="2" Style="{StaticResource Pill}" VerticalAlignment="Top">
@@ -150,11 +150,20 @@
                             <TextBlock Text="存入" Margin="6,0,0,0"/>
                         </StackPanel>
                     </Button>
-                    <Button Grid.Column="1" Style="{StaticResource OutlineButton}" Height="34" Padding="14,0" Margin="8,0,0,0"
-                            Click="GoalWithdraw_Click" Tag="{Binding}">
+                    <Button x:Name="WithdrawBtn" Grid.Column="1" Style="{StaticResource OutlineButton}" Height="34" Padding="14,0"
+                            Margin="8,0,0,0" Click="GoalWithdraw_Click" Tag="{Binding}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE738;" Style="{StaticResource Icon}" FontSize="11"/>
                             <TextBlock Text="取出" Margin="6,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <!-- 每年繳費:以「繳費」取代「取出」(扣掉已存金額並換到下一年) -->
+                    <Button x:Name="PayBtn" Grid.Column="1" Style="{StaticResource OutlineButton}" Height="34" Padding="14,0"
+                            Margin="8,0,0,0" Click="GoalPay_Click" Tag="{Binding}" Visibility="Collapsed"
+                            ToolTip="繳完費後按這裡:從已存金額扣除,並把繳費日改到明年">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE8C7;" Style="{StaticResource Icon}" FontSize="11"/>
+                            <TextBlock Text="繳費" Margin="6,0,0,0"/>
                         </StackPanel>
                     </Button>
                     <Button Grid.Column="3" Style="{StaticResource IconButton}" Content="&#xE70F;" Height="34" Width="34"
@@ -164,12 +173,9 @@
                 </Grid>
             </StackPanel>
             <DataTemplate.Triggers>
-                <DataTrigger Binding="{Binding Note}" Value="">
-                    <Setter TargetName="Sub" Property="Text" Value="{Binding DeadlineText}"/>
-                </DataTrigger>
-                <DataTrigger Binding="{Binding Late}" Value="True">
-                    <Setter TargetName="P" Property="Background" Value="{StaticResource WarnSoftBrush}"/>
-                    <Setter TargetName="PT" Property="Foreground" Value="{StaticResource WarnBrush}"/>
+                <DataTrigger Binding="{Binding Yearly}" Value="True">
+                    <Setter TargetName="WithdrawBtn" Property="Visibility" Value="Collapsed"/>
+                    <Setter TargetName="PayBtn" Property="Visibility" Value="Visible"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Done}" Value="True">
                     <Setter TargetName="P" Property="Background" Value="{StaticResource IncSoftBrush}"/>
@@ -177,6 +183,12 @@
                     <Setter TargetName="Bar" Property="Foreground" Value="{StaticResource IncBrush}"/>
                     <Setter TargetName="Avatar" Property="Background" Value="{StaticResource IncBrush}"/>
                     <Setter TargetName="Hint" Property="Foreground" Value="{StaticResource IncBrush}"/>
+                </DataTrigger>
+                <!-- 放在 Done 之後:每年繳費存足了但繳費日已過,仍要顯示橘色提醒 -->
+                <DataTrigger Binding="{Binding Late}" Value="True">
+                    <Setter TargetName="P" Property="Background" Value="{StaticResource WarnSoftBrush}"/>
+                    <Setter TargetName="PT" Property="Foreground" Value="{StaticResource WarnBrush}"/>
+                    <Setter TargetName="Hint" Property="Foreground" Value="{StaticResource WarnBrush}"/>
                 </DataTrigger>
             </DataTemplate.Triggers>
         </DataTemplate>
@@ -852,7 +864,7 @@
                             </Border>
                             <TextBlock Text="還沒有存錢目標" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold"
                                        HorizontalAlignment="Center" Margin="0,14,0,0"/>
-                            <TextBlock Text="設定一個目標,例如旅行基金、緊急預備金或新手機" Foreground="{StaticResource MutedBrush}"
+                            <TextBlock Text="設定一個目標,例如旅行基金、新手機,或每年要繳的稅金、保險費" Foreground="{StaticResource MutedBrush}"
                                        FontSize="12" HorizontalAlignment="Center" Margin="0,6,0,16"/>
                             <Button Style="{StaticResource AccentButton}" HorizontalAlignment="Center" Click="AddGoal_Click">
                                 <StackPanel Orientation="Horizontal">
