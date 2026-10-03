@@ -314,6 +314,59 @@ namespace ZZZ
             RefreshRecords();
         }
 
+        void EditRecord_Click(object sender, RoutedEventArgs e) => EditRecord();
+
+        void RecordGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (IsOnRow(e)) EditRecord();
+        }
+
+        /// <summary>雙擊在資料列上(不是標題列或空白處)。</summary>
+        static bool IsOnRow(MouseButtonEventArgs e)
+        {
+            for (var o = e.OriginalSource as DependencyObject; o != null; o = VisualTreeHelper.GetParent(o))
+                if (o is DataGridRow) return true;
+            return false;
+        }
+
+        const string TypeSep = " · "; // 編輯框的「類型 · 分類」選項,例如「支出 · 餐飲」
+
+        void EditRecord()
+        {
+            if (RecordGrid.SelectedItems.Count != 1 || RecordGrid.SelectedItem is not RecordRow r)
+            {
+                DialogWindow.Info(this, "提示", "請先在清單中選取一筆記錄(或直接雙擊那一筆)。");
+                return;
+            }
+            var wallets = db.Wallets();
+            var kinds = new List<string>();
+            foreach (var type in new[] { Database.Expense, Database.Income })
+                kinds.AddRange(db.Categories(type).Select(c => type + TypeSep + c));
+            var current = r.Type + TypeSep + r.Category;
+            if (!kinds.Contains(current)) kinds.Insert(0, current); // 分類已被刪掉也保留原值
+            var v = DialogWindow.Prompt(this, "編輯記錄", "",
+            [
+                new Field("日期", r.Date, "點日曆選擇,或直接輸入 YYYY-MM-DD", IsDate: true),
+                new Field("錢包", r.Wallet, Options: wallets.Select(w => w.Name).ToArray()),
+                new Field("類型 · 分類", current, Options: kinds.ToArray()),
+                new Field("金額", r.Amount.ToString("0.##")),
+                new Field("備註(可空白)", r.Note),
+            ], vals =>
+            {
+                if (!DateTime.TryParse(vals[0], out _)) return "日期格式為 YYYY-MM-DD";
+                if (!DialogWindow.TryParseAmount(vals[3], out var a) || a <= 0) return "金額需大於 0";
+                return null;
+            }, "儲存");
+            if (v == null) return;
+            DialogWindow.TryParseAmount(v[3], out var amt);
+            var parts = v[2].Split(TypeSep, 2);
+            var wallet = wallets.First(w => w.Name == v[1]);
+            db.UpdateRecord(r.Id, NormalizeDate(v[0]), parts[0], parts[1], amt, v[4], wallet.Id);
+            RefreshSidebar();
+            RefreshRecords();
+            RecordGrid.SelectedItem = ((List<RecordRow>)RecordGrid.ItemsSource).FirstOrDefault(x => x.Id == r.Id);
+        }
+
         void DeleteRecords_Click(object sender, RoutedEventArgs e) => DeleteRecords();
 
         void RecordGrid_KeyDown(object sender, KeyEventArgs e)
@@ -500,6 +553,40 @@ namespace ZZZ
             DialogWindow.TryParseAmount(v[0], out var amt);
             db.PayDebt(d.Id, amt);
             RefreshDebts();
+        }
+
+        void EditDebt_Click(object sender, RoutedEventArgs e)
+        {
+            if (DebtGrid.SelectedItems.Count != 1 || DebtGrid.SelectedItem is not DebtRow d)
+            {
+                DialogWindow.Info(this, "提示", "請先在清單中選取一筆欠款。");
+                return;
+            }
+            var v = DialogWindow.Prompt(this, "編輯欠款", "",
+            [
+                new Field("對象", d.Person),
+                new Field("方向", d.Direction, Options: [Database.IOwe, Database.TheyOwe]),
+                new Field("金額", d.Amount.ToString("0.##")),
+                new Field("已還金額", d.Paid.ToString("0.##")),
+                new Field("日期", d.Date, "點日曆選擇,或直接輸入 YYYY-MM-DD", IsDate: true),
+                new Field("到期日(可空白)", d.Due, "點日曆選擇,或直接輸入 YYYY-MM-DD", IsDate: true),
+                new Field("備註(可空白)", d.Note),
+            ], vals =>
+            {
+                if (vals[0] == "") return "對象不可空白";
+                if (!DialogWindow.TryParseAmount(vals[2], out var a) || a <= 0) return "金額需大於 0";
+                if (!DialogWindow.TryParseAmount(vals[3] == "" ? "0" : vals[3], out var p) || p < 0) return "已還金額需為 0 或正數";
+                if (p > a + 0.0001) return "已還金額不能超過金額";
+                if (!DateTime.TryParse(vals[4], out _)) return "日期格式為 YYYY-MM-DD";
+                if (vals[5] != "" && !DateTime.TryParse(vals[5], out _)) return "到期日格式為 YYYY-MM-DD,或留空";
+                return null;
+            }, "儲存");
+            if (v == null) return;
+            DialogWindow.TryParseAmount(v[2], out var amt);
+            DialogWindow.TryParseAmount(v[3] == "" ? "0" : v[3], out var paid);
+            db.UpdateDebt(d.Id, v[0], v[1], amt, paid, NormalizeDate(v[4]), NormalizeDate(v[5]), v[6]);
+            RefreshDebts();
+            DebtGrid.SelectedItem = ((List<DebtRow>)DebtGrid.ItemsSource).FirstOrDefault(x => x.Id == d.Id);
         }
 
         List<DebtRow>? SelectedDebts()
@@ -709,6 +796,27 @@ namespace ZZZ
                 else
                     DialogWindow.Success(this, "目標達成!", $"恭喜!「{g.Name}」已經存到 {Money(g.Target)} 了。");
             }
+        }
+
+        void DepositEdit_Click(object sender, RoutedEventArgs e)
+        {
+            var d = (DepositRow)((FrameworkElement)sender).Tag;
+            var v = DialogWindow.Prompt(this, "編輯存取紀錄", "",
+            [
+                new Field("類型", d.IsDeposit ? "存入" : "取出", Options: ["存入", "取出"]),
+                new Field("金額", Math.Abs(d.Amount).ToString("0.##")),
+                new Field("日期", d.Date, "點日曆選擇,或直接輸入 YYYY-MM-DD", IsDate: true),
+                new Field("備註(可空白)", d.Note),
+            ], vals =>
+            {
+                if (!DialogWindow.TryParseAmount(vals[1], out var a) || a <= 0) return "請輸入大於 0 的金額";
+                if (!DateTime.TryParse(vals[2], out _)) return "日期格式為 YYYY-MM-DD";
+                return null;
+            }, "儲存");
+            if (v == null) return;
+            DialogWindow.TryParseAmount(v[1], out var amt);
+            db.UpdateDeposit(d.Id, NormalizeDate(v[2]), v[0] == "存入" ? amt : -amt, v[3]);
+            RefreshGoals();
         }
 
         void DepositDelete_Click(object sender, RoutedEventArgs e)

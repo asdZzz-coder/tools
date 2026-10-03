@@ -259,6 +259,10 @@ namespace ZZZ
             Exec("INSERT INTO records(date,type,category,amount,note,wallet_id) VALUES(@p0,@p1,@p2,@p3,@p4,@p5)",
                  date, type, category, amount, note, walletId);
 
+        public void UpdateRecord(long id, string date, string type, string category, double amount, string note, long walletId) =>
+            Exec("UPDATE records SET date=@p0, type=@p1, category=@p2, amount=@p3, note=@p4, wallet_id=@p5 WHERE id=@p6",
+                 date, type, category, amount, note, walletId, id);
+
         public void DeleteRecords(IEnumerable<long> ids) =>
             InTransaction(() => { foreach (var id in ids) Exec("DELETE FROM records WHERE id=@p0", id); });
 
@@ -270,6 +274,11 @@ namespace ZZZ
         public void AddDebt(string person, string direction, double amount, string date, string due, string note) =>
             Exec("INSERT INTO debts(person,direction,amount,paid,date,due,note) VALUES(@p0,@p1,@p2,0,@p3,@p4,@p5)",
                  person, direction, amount, date, due, note);
+
+        public void UpdateDebt(long id, string person, string direction, double amount, double paid,
+                               string date, string due, string note) =>
+            Exec("UPDATE debts SET person=@p0, direction=@p1, amount=@p2, paid=@p3, date=@p4, due=@p5, note=@p6 WHERE id=@p7",
+                 person, direction, amount, paid, date, due, note, id);
 
         public void PayDebt(long id, double amount) => Exec("UPDATE debts SET paid = paid + @p0 WHERE id=@p1", amount, id);
 
@@ -316,6 +325,10 @@ namespace ZZZ
         /// <param name="amount">正數為存入,負數為取出</param>
         public void AddDeposit(long goalId, string date, double amount, string note) =>
             Exec("INSERT INTO goal_deposits(goal_id,date,amount,note) VALUES(@p0,@p1,@p2,@p3)", goalId, date, amount, note);
+
+        /// <param name="amount">正數為存入,負數為取出</param>
+        public void UpdateDeposit(long id, string date, double amount, string note) =>
+            Exec("UPDATE goal_deposits SET date=@p0, amount=@p1, note=@p2 WHERE id=@p3", date, amount, note, id);
 
         public void DeleteDeposit(long id) => Exec("DELETE FROM goal_deposits WHERE id=@p0", id);
 

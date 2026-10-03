@@ -8,14 +8,16 @@ using System.Windows.Media;
 namespace ZZZ
 {
     /// <param name="IsDate">日期欄:可點日曆選,也可直接輸入 YYYY-MM-DD;值為輸入框裡的文字</param>
-    public record Field(string Label, string Initial = "", string Hint = "", bool IsDate = false);
+    /// <param name="Options">有值時改用下拉選單,值為選到的那一項(Initial 為預設選項)</param>
+    public record Field(string Label, string Initial = "", string Hint = "", bool IsDate = false, string[]? Options = null);
 
     /// <summary>統一風格的訊息/確認/輸入對話框。</summary>
     public partial class DialogWindow : Window
     {
         enum Kind { Info, Success, Error, Question, Danger, Input }
 
-        readonly List<TextBox> boxes = [];
+        readonly List<Func<string>> values = []; // 每個欄位目前的值
+        Control? firstInput;
         Func<string[], string?>? validate;
         public string[]? Values { get; private set; }
 
@@ -95,7 +97,7 @@ namespace ZZZ
 
         void OnOk(object sender, RoutedEventArgs e)
         {
-            var vals = boxes.Select(b => b.Text.Trim()).ToArray();
+            var vals = values.Select(v => v()).ToArray();
             var err = validate?.Invoke(vals);
             if (err != null)
             {
@@ -173,15 +175,27 @@ namespace ZZZ
                 {
                     Text = f.Label, Style = (Style)d.FindResource("FieldLabel"), Margin = new Thickness(2, 14, 0, 6)
                 });
+                if (f.Options != null)
+                {
+                    var cb = new ComboBox
+                    {
+                        ItemsSource = f.Options,
+                        SelectedItem = f.Options.Contains(f.Initial) ? f.Initial : f.Options.FirstOrDefault(),
+                    };
+                    d.values.Add(() => cb.SelectedItem as string ?? "");
+                    d.firstInput ??= cb;
+                    d.Fields.Children.Add(cb);
+                    continue;
+                }
                 var tb = new TextBox { Text = f.Initial, Tag = f.Hint };
-                d.boxes.Add(tb);
+                d.values.Add(() => tb.Text.Trim());
+                d.firstInput ??= tb;
                 d.Fields.Children.Add(f.IsDate ? d.DateBox(tb) : tb);
             }
             d.Loaded += (_, _) =>
             {
-                if (d.boxes.Count == 0) return;
-                d.boxes[0].Focus();
-                d.boxes[0].SelectAll();
+                d.firstInput?.Focus();
+                (d.firstInput as TextBox)?.SelectAll();
             };
             return Run(d) ? d.Values : null;
         }
