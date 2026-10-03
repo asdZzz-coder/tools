@@ -637,9 +637,9 @@ namespace ZZZ
         {
             UpdateInfo? info;
             try { info = await Updater.CheckAsync(); }
-            catch
+            catch (Exception ex)
             {
-                if (!silent) DialogWindow.Error(this, "檢查更新", "無法檢查更新,請確認網路連線。");
+                if (!silent) DialogWindow.Error(this, "檢查更新", Updater.Explain(ex));
                 return;
             }
             if (info == null)

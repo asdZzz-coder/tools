@@ -89,6 +89,22 @@ namespace ZZZ
             return new UpdateInfo(latest, notes.Trim(), root.GetProperty("html_url").GetString() ?? "", packageUrl, size);
         }
 
+        /// <summary>把檢查更新失敗的例外轉成使用者看得懂的原因(不是所有失敗都是網路問題)。</summary>
+        public static string Explain(Exception ex) => ex switch
+        {
+            HttpRequestException { StatusCode: System.Net.HttpStatusCode.NotFound } =>
+                $"找不到更新資訊(HTTP 404)。\n請確認 GitHub 倉庫 {GitHubRepo} 已設為公開(Public),且已發布過 Release。",
+            HttpRequestException { StatusCode: System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.TooManyRequests } =>
+                "GitHub 暫時拒絕了查詢(請求過於頻繁),請稍後再試。",
+            HttpRequestException { StatusCode: { } code } =>
+                $"GitHub 回應了錯誤({(int)code} {code}),請稍後再試。",
+            HttpRequestException or TaskCanceledException or OperationCanceledException =>
+                "無法連線到 GitHub,請確認網路連線。",
+            JsonException or KeyNotFoundException or InvalidOperationException =>
+                "更新資訊的格式無法辨識,請稍後再試。",
+            _ => $"檢查更新失敗:{ex.Message}",
+        };
+
         /// <summary>只信任 GitHub 的下載網址,避免 API 回應被竄改後下載到別處的檔案。</summary>
         static bool IsGitHubUrl(string? url) =>
             Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme == Uri.UriSchemeHttps &&
