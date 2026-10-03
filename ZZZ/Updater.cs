@@ -158,6 +158,77 @@ namespace ZZZ
         public static void CleanupTemp() => Task.Run(() => TryDeleteDirectory(DownloadFolder));
 
         /// <summary>
+        /// 更新後把指向舊版的捷徑改指到新版。ClickOnce 每個版本裝在不同資料夾,
+        /// 釘選到工作列(或自己建立)的 .lnk 記的是舊版 Ledger.exe 的完整路徑:
+        /// 更新後點它仍會開舊版,新版也會在工作列另外多出一個按鈕。
+        /// 開始功能表與桌面的 .appref-ms 由 ClickOnce 自己更新,不用處理。
+        /// </summary>
+        public static void RetargetShortcuts()
+        {
+            if (!IsInstalled) return;
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            var folders = new (string, bool)[]
+            {
+                (Path.Combine(appData, @"Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar"), false),
+                (Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), false),
+                (Environment.GetFolderPath(Environment.SpecialFolder.Programs), true),
+            };
+            Task.Run(() => RetargetShortcuts(AppContext.BaseDirectory, folders));
+        }
+
+        /// <summary>回傳改過的捷徑數。currentDir 是新版所在的 ClickOnce 快取資料夾。</summary>
+        internal static int RetargetShortcuts(string currentDir, IEnumerable<(string Folder, bool Recurse)> folders)
+        {
+            currentDir = Path.TrimEndingDirectorySeparator(currentDir);
+            // 版本資料夾名稱像 ledg..tion_0000000000000000_0001.0000_0860d3eb34fb454a:
+            // 「程式名_公鑰」相同的就是同一個程式的其他版本
+            var name = Path.GetFileName(currentDir);
+            var parts = name.Split('_');
+            if (parts.Length < 4) return 0;
+            var prefix = $"{parts[0]}_{parts[1]}_";
+
+            var type = Type.GetTypeFromProgID("WScript.Shell");
+            if (type == null) return 0;
+            dynamic shell = Activator.CreateInstance(type)!;
+            int changed = 0;
+            foreach (var (folder, recurse) in folders)
+            {
+                if (!Directory.Exists(folder)) continue;
+                foreach (var file in Directory.EnumerateFiles(folder, "*.lnk",
+                             recurse ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly))
+                {
+                    try
+                    {
+                        dynamic link = shell.CreateShortcut(file);
+                        string target = link.TargetPath;
+                        var oldDir = Path.GetDirectoryName(target);
+                        if (oldDir == null || !target.Contains(@"\Apps\2.0\", StringComparison.OrdinalIgnoreCase) ||
+                            !Path.GetFileName(oldDir).StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(oldDir, currentDir, StringComparison.OrdinalIgnoreCase)) continue;
+                        var newTarget = Path.Combine(currentDir, Path.GetFileName(target));
+                        if (!File.Exists(newTarget)) continue;
+
+                        link.TargetPath = newTarget;
+                        string workDir = link.WorkingDirectory, icon = link.IconLocation;
+                        if (workDir.StartsWith(oldDir, StringComparison.OrdinalIgnoreCase))
+                            link.WorkingDirectory = currentDir + workDir[oldDir.Length..];
+                        if (icon.StartsWith(oldDir, StringComparison.OrdinalIgnoreCase))
+                            link.IconLocation = currentDir + icon[oldDir.Length..];
+                        link.Save();
+                        SHChangeNotify(0x2000 /* SHCNE_UPDATEITEM */, 0x0005 /* SHCNF_PATHW */, file, IntPtr.Zero);
+                        changed++;
+                    }
+                    catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or IOException or UnauthorizedAccessException)
+                    { /* 讀不到或寫不進去的捷徑就略過 */ }
+                }
+            }
+            return changed;
+        }
+
+        [System.Runtime.InteropServices.DllImport("shell32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        static extern void SHChangeNotify(int eventId, int flags, string item1, IntPtr item2);
+
+        /// <summary>
         /// 找出當初安裝時用的 Ledger.application 所在資料夾:
         /// 先看 ClickOnce 提供的環境變數,再看開始功能表捷徑(.appref-ms 內記錄了安裝來源)。
         /// </summary>

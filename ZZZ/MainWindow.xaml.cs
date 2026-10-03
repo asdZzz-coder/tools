@@ -43,6 +43,7 @@ namespace ZZZ
             Loaded += (_, _) =>
             {
                 Updater.CleanupTemp(); // 清掉更新後遺留的下載檔
+                Updater.RetargetShortcuts(); // 工作列/桌面上指向舊版的捷徑改指新版
                 var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
                 t.Tick += async (_, _) => { t.Stop(); await CheckUpdate(silent: true); };
                 t.Start();
