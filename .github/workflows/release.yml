@@ -32,7 +32,7 @@ jobs:
           if ($v -notmatch '^\d+\.\d+\.\d+$') { throw "標籤需為 vX.Y.Z 格式,收到:${{ github.ref_name }}" }
           "version=$v" >> $env:GITHUB_OUTPUT
 
-      - name: ClickOnce 發布(單一執行檔,不含 .NET 執行環境)
+      - name: ClickOnce 發布(單一執行檔,內含 .NET 執行環境)
         shell: pwsh
         run: |
           msbuild ZZZ\ZZZ.csproj -restore -t:Publish -p:PublishProfile=ClickOnceProfile `
@@ -57,12 +57,12 @@ jobs:
           }
           Compress-Archive -Path "$pkg\*" -DestinationPath "dist\Ledger-ClickOnce-v${{ steps.ver.outputs.version }}.zip"
 
-      - name: 免安裝版(單一執行檔,不含 .NET 執行環境)
+      - name: 免安裝版(單一執行檔,內含 .NET 執行環境)
         shell: pwsh
         run: |
-          # 注意:要用 -p:SelfContained=false;.NET 10 CLI 的 --self-contained false 仍會包含執行環境
-          dotnet publish ZZZ\ZZZ.csproj -c Release -r win-x64 -p:SelfContained=false `
-            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none `
+          dotnet publish ZZZ\ZZZ.csproj -c Release -r win-x64 -p:SelfContained=true `
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true -p:DebugType=none `
             -p:Version=${{ steps.ver.outputs.version }} -o dist\portable
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item dist\portable\Ledger.exe dist\Ledger.exe
@@ -76,7 +76,7 @@ jobs:
             - **Ledger-ClickOnce-v${{ steps.ver.outputs.version }}.zip**:解壓縮後執行 `安裝.cmd` 安裝(會建立開始選單與桌面捷徑)。已安裝的電腦按「檢查更新」,會直接下載這個安裝包升級。
             - **Ledger.exe**:免安裝版,直接執行。
 
-            兩種版本都需要 [.NET 10 桌面執行環境](https://dotnet.microsoft.com/download/dotnet/10.0)(未安裝時,開啟程式會提示下載)。
+            兩種版本都已內含 .NET 執行環境,不需要另外安裝 .NET。
             記帳資料存放在 `%APPDATA%\Ledger`,更新或重新安裝都不會遺失。
           files: |
             dist/Ledger-ClickOnce-v${{ steps.ver.outputs.version }}.zip
