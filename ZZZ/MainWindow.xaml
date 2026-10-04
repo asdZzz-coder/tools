@@ -21,8 +21,13 @@
                     <TextBlock x:Name="IcoText" Text="{Binding Icon}" Style="{StaticResource Icon}" FontSize="14"
                                Foreground="{StaticResource MutedBrush}"/>
                 </Border>
-                <TextBlock x:Name="Name" Grid.Column="1" Text="{Binding Name}" FontSize="14" Margin="10,0,8,0"
-                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
+                    <TextBlock x:Name="Name" Text="{Binding Name}" FontSize="14" TextTrimming="CharacterEllipsis"/>
+                    <!-- 放了存錢目標的錢包:已分配給目標多少、還有多少可自由使用 -->
+                    <TextBlock x:Name="Alloc" Text="{Binding AllocText}" FontSize="11" Foreground="{StaticResource SubtleBrush}"
+                               Margin="0,1,0,0" TextTrimming="CharacterEllipsis" Visibility="Collapsed"
+                               ToolTip="{Binding GoalTip}"/>
+                </StackPanel>
                 <TextBlock x:Name="Bal" Grid.Column="2" Text="{Binding BalanceText}" FontSize="13"
                            Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
                 <!-- 滑過時提示可拖曳排序 -->
@@ -40,6 +45,12 @@
                 </MultiDataTrigger>
                 <DataTrigger Binding="{Binding Negative}" Value="True">
                     <Setter TargetName="Bal" Property="Foreground" Value="{StaticResource ExpBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding HasGoals}" Value="True">
+                    <Setter TargetName="Alloc" Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding OverAllocated}" Value="True">
+                    <Setter TargetName="Alloc" Property="Foreground" Value="{StaticResource WarnBrush}"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
                     <Setter TargetName="Ico" Property="Background" Value="{StaticResource InkBrush}"/>
@@ -164,16 +175,7 @@
                             <TextBlock Text="&#xE710;" Style="{StaticResource Icon}" FontSize="11"/>
                             <TextBlock Text="存入" Margin="6,0,0,0"/>
                         </StackPanel>
-                    </Button>
-                    <!-- 連結錢包:已存金額就是錢包餘額,改到收支記錄記帳 -->
-                    <Button x:Name="LinkBtn" Style="{StaticResource AccentButton}" Height="34" Padding="14,0" Visibility="Collapsed"
-                            Click="GoalLink_Click" Tag="{Binding}" ToolTip="{Binding LinkTip}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE8C7;" Style="{StaticResource Icon}" FontSize="11"/>
-                            <TextBlock Text="到錢包記帳" Margin="6,0,0,0"/>
-                        </StackPanel>
-                    </Button>
-                    <Button x:Name="WithdrawBtn" Grid.Column="1" Style="{StaticResource OutlineButton}" Height="34" Padding="14,0"
+                    </Button>                    <Button x:Name="WithdrawBtn" Grid.Column="1" Style="{StaticResource OutlineButton}" Height="34" Padding="14,0"
                             Margin="8,0,0,0" Click="GoalWithdraw_Click" Tag="{Binding}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE738;" Style="{StaticResource Icon}" FontSize="11"/>
@@ -199,13 +201,7 @@
                 <DataTrigger Binding="{Binding Yearly}" Value="True">
                     <Setter TargetName="WithdrawBtn" Property="Visibility" Value="Collapsed"/>
                     <Setter TargetName="PayBtn" Property="Visibility" Value="Visible"/>
-                </DataTrigger>
-                <DataTrigger Binding="{Binding Linked}" Value="True">
-                    <Setter TargetName="DepositBtn" Property="Visibility" Value="Collapsed"/>
-                    <Setter TargetName="WithdrawBtn" Property="Visibility" Value="Collapsed"/>
-                    <Setter TargetName="LinkBtn" Property="Visibility" Value="Visible"/>
-                </DataTrigger>
-                <DataTrigger Binding="{Binding Done}" Value="True">
+                </DataTrigger>                <DataTrigger Binding="{Binding Done}" Value="True">
                     <Setter TargetName="P" Property="Background" Value="{StaticResource IncSoftBrush}"/>
                     <Setter TargetName="PT" Property="Foreground" Value="{StaticResource IncBrush}"/>
                     <Setter TargetName="Bar" Property="Foreground" Value="{StaticResource IncBrush}"/>

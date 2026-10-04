@@ -14,14 +14,20 @@ using Microsoft.Win32;
 
 namespace ZZZ
 {
-    /// <param name="Goal">連結到這個錢包的存錢目標名稱(沒有則為空字串)</param>
-    public record WalletItem(long? Id, string Name, double Balance, string Goal = "")
+    /// <param name="Goal">放在這個錢包的存錢目標名稱(多個以「、」分隔,沒有則為空字串)</param>
+    /// <param name="Allocated">已分配給這些目標的金額</param>
+    public record WalletItem(long? Id, string Name, double Balance, string Goal = "", double Allocated = 0)
     {
         public bool IsAll => Id == null;
         public string Icon => Id == null ? "" : Goal != "" ? "" : "";
-        public string? GoalTip => Goal != "" ? $"存錢目標「{Goal}」的錢包" : null;
+        public string? GoalTip => Goal != "" ? $"存錢目標:{Goal}\n已分配給目標 {Allocated:N0},未分配 {Free:N0}" : null;
         public string BalanceText => Balance.ToString("N0");
         public bool Negative => Balance < 0;
+        public bool HasGoals => Goal != "";
+        public double Free => Balance - Allocated;
+        /// <summary>分配給目標的錢超過錢包餘額(例如之後又花掉了)。</summary>
+        public bool OverAllocated => Free < -0.0001;
+        public string AllocText => OverAllocated ? $"分配超出 {-Free:N0}" : $"未分配 {Free:N0}";
     }
 
     public partial class MainWindow : Window
@@ -112,15 +118,17 @@ namespace ZZZ
             var wallets = db.Wallets();
             if (selWallet != null && wallets.All(w => w.Id != selWallet)) selWallet = null;
             var items = new ObservableCollection<WalletItem> { new(null, "全部錢包", wallets.Sum(w => w.Balance)) };
-            var goals = db.Goals().Where(g => g.Linked).GroupBy(g => g.WalletId!.Value)
-                .ToDictionary(x => x.Key, x => string.Join("、", x.Select(g => g.Name)));
-            foreach (var w in wallets) items.Add(new WalletItem(w.Id, w.Name, w.Balance, goals.GetValueOrDefault(w.Id, "")));
+            var goals = db.Goals().Where(g => g.Linked).GroupBy(g => g.WalletId!.Value).ToDictionary(x => x.Key);
+            foreach (var w in wallets)
+                items.Add(goals.TryGetValue(w.Id, out var gs)
+                    ? new WalletItem(w.Id, w.Name, w.Balance, string.Join("、", gs.Select(g => g.Name)), gs.Sum(g => g.Saved))
+                    : new WalletItem(w.Id, w.Name, w.Balance));
             loadingWallets = true;
             WalletList.ItemsSource = items;
             WalletList.SelectedItem = items.First(i => i.Id == selWallet);
             loadingWallets = false;
             RenameWalletBtn.IsEnabled = DeleteWalletBtn.IsEnabled = selWallet != null;
-            RefreshGoals(); // 連結錢包的目標,已存金額跟著錢包餘額變
+            RefreshGoals(); // 目標清單與側欄的已分配金額一起更新
         }
 
         void WalletList_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -219,7 +227,7 @@ namespace ZZZ
             int n = db.WalletRecordCount(id);
             if (!DialogWindow.Confirm(this, "刪除錢包",
                     $"刪除「{item.Name}」,並一併刪除其中 {n} 筆記錄?\n" +
-                    (item.Goal != "" ? $"存錢目標「{item.Goal}」會改回手動存入。\n" : "") + "此動作無法復原。", "刪除", danger: true))
+                    (item.Goal != "" ? $"存錢目標「{item.Goal}」會改成不指定錢包(已存金額不變)。\n" : "") + "此動作無法復原。", "刪除", danger: true))
                 return;
             db.DeleteWallet(id);
             selWallet = null;
@@ -690,17 +698,9 @@ namespace ZZZ
                 DepositEmpty.Visibility = Visibility.Visible;
                 return;
             }
-            if (g.Linked) // 已存金額就是錢包餘額,沒有存取紀錄
-            {
-                DepositList.ItemsSource = null;
-                GoalDetailName.Text = $"{g.Name} · 連結「{g.WalletName}」";
-                DepositEmpty.Text = $"這個目標連結到「{g.WalletName}」\n已存金額就是錢包餘額\n\n存錢或取錢請到收支記錄,\n記在「{g.WalletName}」這個錢包";
-                DepositEmpty.Visibility = Visibility.Visible;
-                return;
-            }
             var list = db.Deposits(g.Id);
             DepositList.ItemsSource = list;
-            GoalDetailName.Text = $"{g.Name} · {g.Count} 筆";
+            GoalDetailName.Text = g.Linked ? $"{g.Name} · 存在「{g.WalletName}」 · {g.Count} 筆" : $"{g.Name} · {g.Count} 筆";
             DepositEmpty.Text = "還沒有存取紀錄\n按「存入」開始存錢吧";
             DepositEmpty.Visibility = list.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
@@ -709,17 +709,22 @@ namespace ZZZ
 
         static GoalRow GoalOf(object sender) => (GoalRow)((FrameworkElement)sender).Tag;
 
-        const string NoWallet = "不連結(手動存入)";
+        const string NoWallet = "不指定錢包";
+
+        /// <summary>錢包裡還沒分配給存錢目標的錢(不算 exceptGoal);可能是負的,表示分配超過餘額。</summary>
+        double WalletFree(long walletId, long? exceptGoal = null) =>
+            (db.Wallets().FirstOrDefault(w => w.Id == walletId)?.Balance ?? 0)
+            - db.Goals().Where(x => x.WalletId == walletId && x.Id != exceptGoal).Sum(x => x.Saved);
 
         /// <summary>
-        /// 目標的輸入欄位:名稱、金額、日期、連結錢包、備註(每年繳費的日期必填)。
-        /// 一個錢包只能連結一個目標,已被其他目標連結的錢包不列出。
+        /// 目標的輸入欄位:名稱、金額、日期、存放的錢包、備註(每年繳費的日期必填)。
+        /// 同一個錢包可以放多個目標;換到別的錢包時,已存的錢要放得進那個錢包可分配的餘額。
         /// </summary>
         (Field[] Fields, Func<string[], string?> Validate, Func<string, long?> WalletOf) GoalForm(bool yearly, GoalRow? g = null)
         {
-            var taken = db.Goals().Where(x => x.Linked && x.Id != g?.Id).Select(x => x.WalletId!.Value).ToHashSet();
-            var wallets = db.Wallets().Where(w => !taken.Contains(w.Id)).ToList();
-            var walletField = new Field("連結錢包(連結後,已存金額 = 錢包餘額)", g?.Linked == true ? g.WalletName : NoWallet,
+            var wallets = db.Wallets();
+            long? WalletOf(string name) => wallets.FirstOrDefault(w => w.Name == name)?.Id;
+            var walletField = new Field("錢放在哪個錢包(存入時從這個錢包分配)", g?.Linked == true ? g.WalletName : NoWallet,
                                         Options: [NoWallet, .. wallets.Select(w => w.Name)]);
             Field[] fields = yearly
             ? [
@@ -742,8 +747,13 @@ namespace ZZZ
                 if (!DialogWindow.TryParseAmount(v[1], out var t) || t <= 0) return yearly ? "每年金額需大於 0" : "目標金額需大於 0";
                 if (yearly && v[2] == "") return "請選擇下次繳費日";
                 if (v[2] != "" && !DateTime.TryParse(v[2], out _)) return "日期格式為 YYYY-MM-DD" + (yearly ? "" : ",或留空");
+                if (g != null && WalletOf(v[3]) is long w && w != g.WalletId && g.Saved > 0.0001)
+                {
+                    var free = WalletFree(w, g.Id);
+                    if (g.Saved > free + 0.0001) return $"「{v[3]}」可分配的錢只有 {Money(Math.Max(free, 0))},這個目標已存 {Money(g.Saved)}";
+                }
                 return null;
-            }, name => wallets.FirstOrDefault(w => w.Name == name)?.Id);
+            }, WalletOf);
         }
 
         static string NormalizeDate(string s) => DateTime.TryParse(s, out var d) ? d.ToString("yyyy-MM-dd") : "";
@@ -779,24 +789,9 @@ namespace ZZZ
             var v = DialogWindow.Prompt(this, g.Yearly ? "編輯每年繳費" : "編輯目標", "", fields, validate, "儲存");
             if (v == null) return;
             DialogWindow.TryParseAmount(v[1], out var target);
-            var wallet = walletOf(v[3]);
-            db.UpdateGoal(g.Id, v[0], target, NormalizeDate(v[2]), v[4], wallet);
+            db.UpdateGoal(g.Id, v[0], target, NormalizeDate(v[2]), v[4], walletOf(v[3]));
             RefreshSidebar();
             SelectGoal(g.Id);
-            if (wallet != null && !g.Linked && g.Count > 0)
-                DialogWindow.Info(this, "已連結錢包",
-                    $"「{v[0]}」的已存金額改用「{v[3]}」的餘額。\n原本的 {g.Count} 筆存取紀錄會保留,取消連結後就會恢復。");
-        }
-
-        /// <summary>連結錢包的目標:切到收支記錄並選好那個錢包,直接記帳。</summary>
-        void GoalLink_Click(object sender, RoutedEventArgs e)
-        {
-            var g = GoalOf(sender);
-            selWallet = g.WalletId;
-            catFilter = null;
-            TabRecords.IsChecked = true;
-            RefreshAll();
-            RecAmount.Focus();
         }
 
         void GoalPay_Click(object sender, RoutedEventArgs e)
@@ -823,15 +818,17 @@ namespace ZZZ
             var withdraw = Math.Min(paid, Math.Max(g.Saved, 0));
             var note = $"{year} 年繳費" + (paid > withdraw + 0.0001 ? $"(實繳 {Money(paid)})" : "");
             db.PayYearly(g.Id, NormalizeDate(v[1]), withdraw, note, next.ToString("yyyy-MM-dd"));
-            RefreshGoals(g.Id);
+            RefreshSidebar();
         }
 
-        /// <summary>連結錢包的每年繳費:在該錢包記一筆支出,錢包餘額(也就是已存金額)跟著減少。</summary>
+        /// <summary>
+        /// 放在錢包裡的每年繳費:在該錢包記一筆支出,並只從這個目標已存的錢扣除(同錢包的其他目標不受影響)。
+        /// </summary>
         void PayFromWallet(GoalRow g, int year, DateTime next)
         {
             var cats = db.Categories(Database.Expense);
             var v = DialogWindow.Prompt(this, $"繳費:{g.Name}",
-                $"會在「{g.WalletName}」記一筆支出(目前餘額 {Money(g.Saved)}),下次繳費日改為 {next:yyyy-MM-dd}。",
+                $"會在「{g.WalletName}」記一筆支出,並從這個目標已存的 {Money(g.Saved)} 扣除;下次繳費日改為 {next:yyyy-MM-dd}。",
             [
                 new Field("繳費金額", g.Target.ToString("0.##")),
                 new Field("繳費日期", DateTime.Today.ToString("yyyy-MM-dd"), "點日曆選擇,或直接輸入 YYYY-MM-DD", IsDate: true),
@@ -845,8 +842,10 @@ namespace ZZZ
             }, "已繳費");
             if (v == null) return;
             DialogWindow.TryParseAmount(v[0], out var paid);
+            var withdraw = Math.Min(paid, Math.Max(g.Saved, 0));
+            var note = $"{year} 年繳費" + (paid > withdraw + 0.0001 ? $"(實繳 {Money(paid)})" : "");
             db.PayYearlyFromWallet(g.Id, g.WalletId!.Value, NormalizeDate(v[1]), v[2], paid,
-                                   $"{g.Name} {year} 年繳費", next.ToString("yyyy-MM-dd"));
+                                   $"{g.Name} {year} 年繳費", withdraw, note, next.ToString("yyyy-MM-dd"));
             RefreshSidebar();
             RefreshRecords();
             SelectGoal(g.Id);
@@ -859,7 +858,7 @@ namespace ZZZ
                     $"刪除「{g.Name}」以及其中 {g.Count} 筆存取紀錄?\n此動作無法復原。", "刪除", danger: true))
                 return;
             db.DeleteGoal(g.Id);
-            RefreshGoals();
+            RefreshSidebar();
         }
 
         void GoalDeposit_Click(object sender, RoutedEventArgs e) => GoalMove(GoalOf(sender), deposit: true);
@@ -869,9 +868,16 @@ namespace ZZZ
         {
             GoalList.SelectedItem = g;
             if (!deposit && g.Saved <= 0) { DialogWindow.Info(this, "提示", "這個目標目前沒有存款可以取出。"); return; }
+            double free = g.WalletId is long w ? WalletFree(w) : double.PositiveInfinity; // 錢包還能分配多少
+            if (deposit && free <= 0.0001)
+            {
+                DialogWindow.Info(this, "提示", $"「{g.WalletName}」的錢都已經分配給存錢目標了,目前沒有可以存入的餘額。");
+                return;
+            }
             var msg = deposit
                 ? $"「{g.Name}」已存 {Money(g.Saved)},還差 {Money(g.Remaining)}"
                 : $"「{g.Name}」目前已存 {Money(g.Saved)}";
+            if (deposit && g.Linked) msg += $"\n從「{g.WalletName}」分配,可分配 {Money(free)}";
             var v = DialogWindow.Prompt(this, deposit ? "存入" : "取出", msg,
             [
                 new Field("金額", "", deposit && g.Remaining > 0 ? $"還差 {Money(g.Remaining)}" : $"最多 {Money(g.Saved)}"),
@@ -881,6 +887,7 @@ namespace ZZZ
             {
                 if (!DialogWindow.TryParseAmount(vals[0], out var a) || a <= 0) return "請輸入大於 0 的金額";
                 if (!deposit && a > g.Saved + 0.0001) return "取出金額超過目前已存金額";
+                if (deposit && a > free + 0.0001) return $"「{g.WalletName}」只剩 {Money(free)} 可以分配";
                 if (!DateTime.TryParse(vals[1], out _)) return "日期格式為 YYYY-MM-DD";
                 return null;
             }, deposit ? "存入" : "取出");
@@ -888,7 +895,7 @@ namespace ZZZ
             DialogWindow.TryParseAmount(v[0], out var amt);
             bool wasDone = g.Done;
             db.AddDeposit(g.Id, NormalizeDate(v[1]), deposit ? amt : -amt, v[2]);
-            RefreshGoals(g.Id);
+            RefreshSidebar(); // 側欄的已分配/可用跟著變
             if (deposit && !wasDone && g.Saved + amt >= g.Target - 0.0001)
             {
                 if (g.Yearly)
@@ -901,6 +908,7 @@ namespace ZZZ
         void DepositEdit_Click(object sender, RoutedEventArgs e)
         {
             var d = (DepositRow)((FrameworkElement)sender).Tag;
+            var g = GoalList.SelectedItem as GoalRow; // 存取紀錄列的是目前選取的目標
             var v = DialogWindow.Prompt(this, "編輯存取紀錄", "",
             [
                 new Field("類型", d.IsDeposit ? "存入" : "取出", Options: ["存入", "取出"]),
@@ -911,12 +919,16 @@ namespace ZZZ
             {
                 if (!DialogWindow.TryParseAmount(vals[1], out var a) || a <= 0) return "請輸入大於 0 的金額";
                 if (!DateTime.TryParse(vals[2], out _)) return "日期格式為 YYYY-MM-DD";
+                // 放在錢包的目標:多存入的部分不能超過錢包可分配的錢
+                double more = (vals[0] == "存入" ? a : -a) - d.Amount;
+                if (g?.WalletId is long w && more > 0.0001 && more > WalletFree(w) + 0.0001)
+                    return $"「{g.WalletName}」只剩 {Money(Math.Max(WalletFree(w), 0))} 可以分配";
                 return null;
             }, "儲存");
             if (v == null) return;
             DialogWindow.TryParseAmount(v[1], out var amt);
             db.UpdateDeposit(d.Id, NormalizeDate(v[2]), v[0] == "存入" ? amt : -amt, v[3]);
-            RefreshGoals();
+            RefreshSidebar();
         }
 
         void DepositDelete_Click(object sender, RoutedEventArgs e)
@@ -926,7 +938,7 @@ namespace ZZZ
                     "刪除", danger: true))
                 return;
             db.DeleteDeposit(d.Id);
-            RefreshGoals();
+            RefreshSidebar();
         }
 
         // ================= 支出圖表 =================
