@@ -8,7 +8,7 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>Ledger</AssemblyName>
     <Product>簡易記帳</Product>
-    <Version>1.0.8</Version>
+    <Version>1.0.9</Version>
     <!-- 圖示由 Assets\make-icon.ps1 產生 -->
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
   </PropertyGroup>

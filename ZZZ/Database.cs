@@ -25,10 +25,13 @@ namespace ZZZ
     }
 
     /// <param name="Repeat">空字串為一次性目標;<see cref="Database.Yearly"/> 為每年繳費(Deadline 是下次繳費日)</param>
+    /// <param name="WalletId">連結的錢包:已存金額直接等於該錢包餘額,不再用存取紀錄計算</param>
     public record GoalRow(long Id, string Name, double Target, double Saved, string Deadline, string Note, int Count,
-                          string Repeat = "")
+                          string Repeat = "", long? WalletId = null, string WalletName = "")
     {
         public bool Yearly => Repeat == Database.Yearly;
+        public bool Linked => WalletId != null;
+        public string LinkTip => $"已存金額就是「{WalletName}」的餘額,到收支記錄記在這個錢包";
         public double Progress => Target <= 0 ? 0 : Math.Clamp(Saved / Target, 0, 1);
         public string PercentText => $"{Progress:P0}";
         public double Remaining => Math.Max(Target - Saved, 0);
@@ -45,9 +48,17 @@ namespace ZZZ
         public string DeadlineText => Yearly && DateTime.TryParse(Deadline, out var d)
             ? $"每年 {d.Month}/{d.Day} 繳費"
             : Deadline != "" ? $"目標日 {Deadline}" : "未設定目標日期";
-        /// <summary>卡片名稱下方那一行:每年繳費一律顯示繳費日,一次性目標有備註就顯示備註。</summary>
-        public string SubText => Yearly ? (Note != "" ? $"{DeadlineText} · {Note}" : DeadlineText)
-                                        : Note != "" ? Note : DeadlineText;
+        /// <summary>卡片名稱下方那一行:連結的錢包、每年繳費一律顯示繳費日,一次性目標有備註就顯示備註。</summary>
+        public string SubText
+        {
+            get
+            {
+                var text = Yearly ? (Note != "" ? $"{DeadlineText} · {Note}" : DeadlineText)
+                                  : Note != "" ? Note : DeadlineText;
+                if (!Linked) return text;
+                return Deadline == "" && Note == "" ? $"存在「{WalletName}」" : $"存在「{WalletName}」 · {text}";
+            }
+        }
 
         /// <summary>例如「還差 38,000 · 剩 120 天 · 每月約存 9,500」</summary>
         public string Hint
@@ -174,6 +185,8 @@ namespace ZZZ
                 Exec("ALTER TABLE wallets ADD COLUMN sort INTEGER DEFAULT 0");
             if (!Columns("goals").Contains("repeat")) // 每年繳費的目標
                 Exec("ALTER TABLE goals ADD COLUMN repeat TEXT DEFAULT ''");
+            if (!Columns("goals").Contains("wallet_id")) // 連結錢包的目標(NULL 為手動存入)
+                Exec("ALTER TABLE goals ADD COLUMN wallet_id INTEGER");
             EnsureDefaults();
         }
 
@@ -243,6 +256,7 @@ namespace ZZZ
         public void DeleteWallet(long id) => InTransaction(() =>
         {
             Exec("DELETE FROM records WHERE wallet_id=@p0", id);
+            Exec("UPDATE goals SET wallet_id=NULL WHERE wallet_id=@p0", id); // 連結的目標改回手動存入
             Exec("DELETE FROM wallets WHERE id=@p0", id);
         });
 
@@ -303,17 +317,31 @@ namespace ZZZ
             InTransaction(() => { foreach (var id in ids) Exec("DELETE FROM debts WHERE id=@p0", id); });
 
         // ---------- 存錢目標 ----------
+        /// <summary>已存金額:連結錢包的目標用錢包餘額,其他用存取紀錄加總。</summary>
         public List<GoalRow> Goals() => Query(
-            "SELECT g.id, g.name, g.target, COALESCE(SUM(d.amount), 0), g.deadline, g.note, COUNT(d.id), g.repeat " +
-            "FROM goals g LEFT JOIN goal_deposits d ON d.goal_id = g.id GROUP BY g.id ORDER BY g.id",
-            r => new GoalRow(r.GetInt64(0), Str(r, 1), Num(r, 2), Num(r, 3), Str(r, 4), Str(r, 5), r.GetInt32(6), Str(r, 7)));
+            "SELECT g.id, g.name, g.target, CASE WHEN w.id IS NULL " +
+            "THEN COALESCE((SELECT SUM(amount) FROM goal_deposits WHERE goal_id = g.id), 0) " +
+            "ELSE w.initial + COALESCE((SELECT SUM(CASE type WHEN '收入' THEN amount ELSE -amount END) " +
+            "FROM records WHERE wallet_id = w.id), 0) END, " +
+            "g.deadline, g.note, (SELECT COUNT(*) FROM goal_deposits WHERE goal_id = g.id), g.repeat, w.id, w.name " +
+            "FROM goals g LEFT JOIN wallets w ON w.id = g.wallet_id ORDER BY g.id",
+            r => new GoalRow(r.GetInt64(0), Str(r, 1), Num(r, 2), Num(r, 3), Str(r, 4), Str(r, 5), r.GetInt32(6), Str(r, 7),
+                             r.IsDBNull(8) ? null : r.GetInt64(8), Str(r, 9)));
 
-        public long AddGoal(string name, double target, string deadline, string note, string repeat = "")
+        public long AddGoal(string name, double target, string deadline, string note, string repeat = "", long? walletId = null)
         {
-            Exec("INSERT INTO goals(name,target,deadline,note,created,repeat) VALUES(@p0,@p1,@p2,@p3,@p4,@p5)",
-                 name, target, deadline, note, DateTime.Today.ToString("yyyy-MM-dd"), repeat);
+            Exec("INSERT INTO goals(name,target,deadline,note,created,repeat,wallet_id) VALUES(@p0,@p1,@p2,@p3,@p4,@p5,@p6)",
+                 name, target, deadline, note, DateTime.Today.ToString("yyyy-MM-dd"), repeat, walletId);
             return (long)Scalar("SELECT last_insert_rowid()")!;
         }
+
+        /// <summary>連結錢包的每年繳費:在該錢包記一筆支出,並把繳費日延後一年。</summary>
+        public void PayYearlyFromWallet(long id, long walletId, string date, string category, double amount,
+                                        string note, string nextDeadline) => InTransaction(() =>
+        {
+            AddRecord(date, Expense, category, amount, note, walletId);
+            Exec("UPDATE goals SET deadline=@p0 WHERE id=@p1", nextDeadline, id);
+        });
 
         /// <summary>每年繳費:從已存金額扣掉繳費金額(扣到 0 為止),並把繳費日延後一年。</summary>
         public void PayYearly(long id, string date, double withdraw, string note, string nextDeadline) => InTransaction(() =>
@@ -322,9 +350,9 @@ namespace ZZZ
             Exec("UPDATE goals SET deadline=@p0 WHERE id=@p1", nextDeadline, id);
         });
 
-        public void UpdateGoal(long id, string name, double target, string deadline, string note) =>
-            Exec("UPDATE goals SET name=@p0, target=@p1, deadline=@p2, note=@p3 WHERE id=@p4",
-                 name, target, deadline, note, id);
+        public void UpdateGoal(long id, string name, double target, string deadline, string note, long? walletId) =>
+            Exec("UPDATE goals SET name=@p0, target=@p1, deadline=@p2, note=@p3, wallet_id=@p4 WHERE id=@p5",
+                 name, target, deadline, note, walletId, id);
 
         public void DeleteGoal(long id) => InTransaction(() =>
         {

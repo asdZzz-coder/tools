@@ -14,10 +14,12 @@ using Microsoft.Win32;
 
 namespace ZZZ
 {
-    public record WalletItem(long? Id, string Name, double Balance)
+    /// <param name="Goal">連結到這個錢包的存錢目標名稱(沒有則為空字串)</param>
+    public record WalletItem(long? Id, string Name, double Balance, string Goal = "")
     {
         public bool IsAll => Id == null;
-        public string Icon => Id == null ? "" : "";
+        public string Icon => Id == null ? "" : Goal != "" ? "" : "";
+        public string? GoalTip => Goal != "" ? $"存錢目標「{Goal}」的錢包" : null;
         public string BalanceText => Balance.ToString("N0");
         public bool Negative => Balance < 0;
     }
@@ -110,12 +112,15 @@ namespace ZZZ
             var wallets = db.Wallets();
             if (selWallet != null && wallets.All(w => w.Id != selWallet)) selWallet = null;
             var items = new ObservableCollection<WalletItem> { new(null, "全部錢包", wallets.Sum(w => w.Balance)) };
-            foreach (var w in wallets) items.Add(new WalletItem(w.Id, w.Name, w.Balance));
+            var goals = db.Goals().Where(g => g.Linked).GroupBy(g => g.WalletId!.Value)
+                .ToDictionary(x => x.Key, x => string.Join("、", x.Select(g => g.Name)));
+            foreach (var w in wallets) items.Add(new WalletItem(w.Id, w.Name, w.Balance, goals.GetValueOrDefault(w.Id, "")));
             loadingWallets = true;
             WalletList.ItemsSource = items;
             WalletList.SelectedItem = items.First(i => i.Id == selWallet);
             loadingWallets = false;
             RenameWalletBtn.IsEnabled = DeleteWalletBtn.IsEnabled = selWallet != null;
+            RefreshGoals(); // 連結錢包的目標,已存金額跟著錢包餘額變
         }
 
         void WalletList_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -213,7 +218,8 @@ namespace ZZZ
             if (db.WalletCount() <= 1) { DialogWindow.Info(this, "提示", "至少要保留一個錢包"); return; }
             int n = db.WalletRecordCount(id);
             if (!DialogWindow.Confirm(this, "刪除錢包",
-                    $"刪除「{item.Name}」,並一併刪除其中 {n} 筆記錄?\n此動作無法復原。", "刪除", danger: true))
+                    $"刪除「{item.Name}」,並一併刪除其中 {n} 筆記錄?\n" +
+                    (item.Goal != "" ? $"存錢目標「{item.Goal}」會改回手動存入。\n" : "") + "此動作無法復原。", "刪除", danger: true))
                 return;
             db.DeleteWallet(id);
             selWallet = null;
@@ -684,6 +690,14 @@ namespace ZZZ
                 DepositEmpty.Visibility = Visibility.Visible;
                 return;
             }
+            if (g.Linked) // 已存金額就是錢包餘額,沒有存取紀錄
+            {
+                DepositList.ItemsSource = null;
+                GoalDetailName.Text = $"{g.Name} · 連結「{g.WalletName}」";
+                DepositEmpty.Text = $"這個目標連結到「{g.WalletName}」\n已存金額就是錢包餘額\n\n存錢或取錢請到收支記錄,\n記在「{g.WalletName}」這個錢包";
+                DepositEmpty.Visibility = Visibility.Visible;
+                return;
+            }
             var list = db.Deposits(g.Id);
             DepositList.ItemsSource = list;
             GoalDetailName.Text = $"{g.Name} · {g.Count} 筆";
@@ -695,20 +709,31 @@ namespace ZZZ
 
         static GoalRow GoalOf(object sender) => (GoalRow)((FrameworkElement)sender).Tag;
 
-        /// <summary>目標的輸入欄位:名稱、金額、日期、備註(每年繳費的日期必填)。</summary>
-        static (Field[] Fields, Func<string[], string?> Validate) GoalForm(bool yearly, GoalRow? g = null)
+        const string NoWallet = "不連結(手動存入)";
+
+        /// <summary>
+        /// 目標的輸入欄位:名稱、金額、日期、連結錢包、備註(每年繳費的日期必填)。
+        /// 一個錢包只能連結一個目標,已被其他目標連結的錢包不列出。
+        /// </summary>
+        (Field[] Fields, Func<string[], string?> Validate, Func<string, long?> WalletOf) GoalForm(bool yearly, GoalRow? g = null)
         {
+            var taken = db.Goals().Where(x => x.Linked && x.Id != g?.Id).Select(x => x.WalletId!.Value).ToHashSet();
+            var wallets = db.Wallets().Where(w => !taken.Contains(w.Id)).ToList();
+            var walletField = new Field("連結錢包(連結後,已存金額 = 錢包餘額)", g?.Linked == true ? g.WalletName : NoWallet,
+                                        Options: [NoWallet, .. wallets.Select(w => w.Name)]);
             Field[] fields = yearly
             ? [
                 new Field("費用名稱", g?.Name ?? "", "例如:汽車牌照稅、燃料稅、汽車保險"),
                 new Field("每年金額", g?.Target.ToString("0.##") ?? "", "例如:11230"),
                 new Field("下次繳費日", g?.Deadline ?? "", "點日曆選擇,或直接輸入 YYYY-MM-DD", IsDate: true),
+                walletField,
                 new Field("備註(可空白)", g?.Note ?? ""),
             ]
             : [
                 new Field("目標名稱", g?.Name ?? "", "例如:日本旅行、緊急預備金"),
                 new Field("目標金額", g?.Target.ToString("0.##") ?? "", "例如:50000"),
                 new Field("目標日期(可空白)", g?.Deadline ?? "", "點日曆選擇,或直接輸入 YYYY-MM-DD", IsDate: true),
+                walletField,
                 new Field("備註(可空白)", g?.Note ?? ""),
             ];
             return (fields, v =>
@@ -718,7 +743,7 @@ namespace ZZZ
                 if (yearly && v[2] == "") return "請選擇下次繳費日";
                 if (v[2] != "" && !DateTime.TryParse(v[2], out _)) return "日期格式為 YYYY-MM-DD" + (yearly ? "" : ",或留空");
                 return null;
-            });
+            }, name => wallets.FirstOrDefault(w => w.Name == name)?.Id);
         }
 
         static string NormalizeDate(string s) => DateTime.TryParse(s, out var d) ? d.ToString("yyyy-MM-dd") : "";
@@ -732,26 +757,46 @@ namespace ZZZ
             ]);
             if (kind == null) return;
             bool yearly = kind == 1;
-            var (fields, validate) = GoalForm(yearly);
+            var (fields, validate, walletOf) = GoalForm(yearly);
             var v = DialogWindow.Prompt(this, yearly ? "新增每年繳費" : "新增存錢目標",
                 yearly ? "設定每年要繳的金額與繳費日,程式會算出每個月該存多少。" : "設定想存到的金額,也可以加上目標日期。",
                 fields, validate, "建立");
             if (v == null) return;
             DialogWindow.TryParseAmount(v[1], out var target);
-            var id = db.AddGoal(v[0], target, NormalizeDate(v[2]), v[3], yearly ? Database.Yearly : "");
-            RefreshGoals(id);
+            var id = db.AddGoal(v[0], target, NormalizeDate(v[2]), v[4], yearly ? Database.Yearly : "", walletOf(v[3]));
+            RefreshSidebar(); // 側欄錢包圖示與目標清單一起更新
+            SelectGoal(id);
         }
+
+        void SelectGoal(long id) =>
+            GoalList.SelectedItem = ((List<GoalRow>)GoalList.ItemsSource).FirstOrDefault(x => x.Id == id);
 
         void GoalEdit_Click(object sender, RoutedEventArgs e)
         {
             var g = GoalOf(sender);
             GoalList.SelectedItem = g;
-            var (fields, validate) = GoalForm(g.Yearly, g);
+            var (fields, validate, walletOf) = GoalForm(g.Yearly, g);
             var v = DialogWindow.Prompt(this, g.Yearly ? "編輯每年繳費" : "編輯目標", "", fields, validate, "儲存");
             if (v == null) return;
             DialogWindow.TryParseAmount(v[1], out var target);
-            db.UpdateGoal(g.Id, v[0], target, NormalizeDate(v[2]), v[3]);
-            RefreshGoals(g.Id);
+            var wallet = walletOf(v[3]);
+            db.UpdateGoal(g.Id, v[0], target, NormalizeDate(v[2]), v[4], wallet);
+            RefreshSidebar();
+            SelectGoal(g.Id);
+            if (wallet != null && !g.Linked && g.Count > 0)
+                DialogWindow.Info(this, "已連結錢包",
+                    $"「{v[0]}」的已存金額改用「{v[3]}」的餘額。\n原本的 {g.Count} 筆存取紀錄會保留,取消連結後就會恢復。");
+        }
+
+        /// <summary>連結錢包的目標:切到收支記錄並選好那個錢包,直接記帳。</summary>
+        void GoalLink_Click(object sender, RoutedEventArgs e)
+        {
+            var g = GoalOf(sender);
+            selWallet = g.WalletId;
+            catFilter = null;
+            TabRecords.IsChecked = true;
+            RefreshAll();
+            RecAmount.Focus();
         }
 
         void GoalPay_Click(object sender, RoutedEventArgs e)
@@ -759,6 +804,8 @@ namespace ZZZ
             var g = GoalOf(sender);
             GoalList.SelectedItem = g;
             var next = DateTime.TryParse(g.Deadline, out var due) ? due.AddYears(1) : DateTime.Today.AddYears(1);
+            var year = due != default ? due.Year : DateTime.Today.Year;
+            if (g.Linked) { PayFromWallet(g, year, next); return; }
             var v = DialogWindow.Prompt(this, $"繳費:{g.Name}",
                 $"目前已存 {Money(g.Saved)}。繳費金額會從已存金額扣除,下次繳費日改為 {next:yyyy-MM-dd}。",
             [
@@ -774,10 +821,35 @@ namespace ZZZ
             DialogWindow.TryParseAmount(v[0], out var paid);
             // 已存的不夠時只扣到 0,不足的部分當作從別處付
             var withdraw = Math.Min(paid, Math.Max(g.Saved, 0));
-            var year = due != default ? due.Year : DateTime.Today.Year;
             var note = $"{year} 年繳費" + (paid > withdraw + 0.0001 ? $"(實繳 {Money(paid)})" : "");
             db.PayYearly(g.Id, NormalizeDate(v[1]), withdraw, note, next.ToString("yyyy-MM-dd"));
             RefreshGoals(g.Id);
+        }
+
+        /// <summary>連結錢包的每年繳費:在該錢包記一筆支出,錢包餘額(也就是已存金額)跟著減少。</summary>
+        void PayFromWallet(GoalRow g, int year, DateTime next)
+        {
+            var cats = db.Categories(Database.Expense);
+            var v = DialogWindow.Prompt(this, $"繳費:{g.Name}",
+                $"會在「{g.WalletName}」記一筆支出(目前餘額 {Money(g.Saved)}),下次繳費日改為 {next:yyyy-MM-dd}。",
+            [
+                new Field("繳費金額", g.Target.ToString("0.##")),
+                new Field("繳費日期", DateTime.Today.ToString("yyyy-MM-dd"), "點日曆選擇,或直接輸入 YYYY-MM-DD", IsDate: true),
+                new Field("支出分類", cats.Contains("其他") ? "其他" : cats.FirstOrDefault() ?? "", Options: cats.ToArray()),
+            ], vals =>
+            {
+                if (!DialogWindow.TryParseAmount(vals[0], out var a) || a <= 0) return "請輸入大於 0 的金額";
+                if (!DateTime.TryParse(vals[1], out _)) return "日期格式為 YYYY-MM-DD";
+                if (vals[2] == "") return "請先在「管理分類」建立支出分類";
+                return null;
+            }, "已繳費");
+            if (v == null) return;
+            DialogWindow.TryParseAmount(v[0], out var paid);
+            db.PayYearlyFromWallet(g.Id, g.WalletId!.Value, NormalizeDate(v[1]), v[2], paid,
+                                   $"{g.Name} {year} 年繳費", next.ToString("yyyy-MM-dd"));
+            RefreshSidebar();
+            RefreshRecords();
+            SelectGoal(g.Id);
         }
 
         void GoalDelete_Click(object sender, RoutedEventArgs e)

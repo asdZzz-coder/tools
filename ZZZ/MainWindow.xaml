@@ -16,7 +16,8 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <Border x:Name="Ico" Width="30" Height="30" CornerRadius="8" Background="{StaticResource GhostBrush}">
+                <Border x:Name="Ico" Width="30" Height="30" CornerRadius="8" Background="{StaticResource GhostBrush}"
+                        ToolTip="{Binding GoalTip}">
                     <TextBlock x:Name="IcoText" Text="{Binding Icon}" Style="{StaticResource Icon}" FontSize="14"
                                Foreground="{StaticResource MutedBrush}"/>
                 </Border>
@@ -157,10 +158,19 @@
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <Button Style="{StaticResource AccentButton}" Height="34" Padding="14,0" Click="GoalDeposit_Click" Tag="{Binding}">
+                    <Button x:Name="DepositBtn" Style="{StaticResource AccentButton}" Height="34" Padding="14,0"
+                            Click="GoalDeposit_Click" Tag="{Binding}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE710;" Style="{StaticResource Icon}" FontSize="11"/>
                             <TextBlock Text="存入" Margin="6,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <!-- 連結錢包:已存金額就是錢包餘額,改到收支記錄記帳 -->
+                    <Button x:Name="LinkBtn" Style="{StaticResource AccentButton}" Height="34" Padding="14,0" Visibility="Collapsed"
+                            Click="GoalLink_Click" Tag="{Binding}" ToolTip="{Binding LinkTip}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE8C7;" Style="{StaticResource Icon}" FontSize="11"/>
+                            <TextBlock Text="到錢包記帳" Margin="6,0,0,0"/>
                         </StackPanel>
                     </Button>
                     <Button x:Name="WithdrawBtn" Grid.Column="1" Style="{StaticResource OutlineButton}" Height="34" Padding="14,0"
@@ -189,6 +199,11 @@
                 <DataTrigger Binding="{Binding Yearly}" Value="True">
                     <Setter TargetName="WithdrawBtn" Property="Visibility" Value="Collapsed"/>
                     <Setter TargetName="PayBtn" Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Linked}" Value="True">
+                    <Setter TargetName="DepositBtn" Property="Visibility" Value="Collapsed"/>
+                    <Setter TargetName="WithdrawBtn" Property="Visibility" Value="Collapsed"/>
+                    <Setter TargetName="LinkBtn" Property="Visibility" Value="Visible"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Done}" Value="True">
                     <Setter TargetName="P" Property="Background" Value="{StaticResource IncSoftBrush}"/>
