@@ -73,6 +73,12 @@ namespace ZZZ
         }
     }
 
+    /// <param name="Month">yyyy-MM</param>
+    public record MonthTotal(string Month, double Income, double Expense)
+    {
+        public double Net => Income - Expense;
+    }
+
     public record DepositRow(long Id, string Date, double Amount, string Note)
     {
         public bool IsDeposit => Amount >= 0;
@@ -254,6 +260,14 @@ namespace ZZZ
                 r => new RecordRow(r.GetInt64(0), Str(r, 1), Str(r, 2), Str(r, 3), Str(r, 4), Num(r, 5), Str(r, 6)),
                 args.ToArray());
         }
+
+        /// <summary>每個月的收入、支出合計(圖表用),只列出有記錄的月份。</summary>
+        public List<MonthTotal> MonthTotals(long? walletId) => Query(
+            "SELECT substr(date, 1, 7) m, SUM(CASE type WHEN '收入' THEN amount ELSE 0 END), " +
+            "SUM(CASE type WHEN '收入' THEN 0 ELSE amount END) FROM records" +
+            (walletId != null ? " WHERE wallet_id=@p0" : "") + " GROUP BY m ORDER BY m",
+            r => new MonthTotal(Str(r, 0), Num(r, 1), Num(r, 2)),
+            walletId != null ? new object?[] { walletId } : []);
 
         public void AddRecord(string date, string type, string category, double amount, string note, long walletId) =>
             Exec("INSERT INTO records(date,type,category,amount,note,wallet_id) VALUES(@p0,@p1,@p2,@p3,@p4,@p5)",

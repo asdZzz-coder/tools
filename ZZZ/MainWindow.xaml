@@ -1,6 +1,7 @@
 ﻿<Window x:Class="ZZZ.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:ZZZ"
         Title="簡易記帳" Icon="Assets/AppIcon.ico" Width="1280" Height="800" MinWidth="1200" MinHeight="680"
         WindowStartupLocation="CenterScreen" Background="{StaticResource BgBrush}"
         FontFamily="{StaticResource AppFont}" Foreground="{StaticResource TextBrush}"
@@ -243,6 +244,36 @@
                 </DataTrigger>
             </DataTemplate.Triggers>
         </DataTemplate>
+
+        <!-- 支出圖表右側的分類列表:點一列跳到該分類的收支記錄 -->
+        <DataTemplate x:Key="CatLegendTemplate">
+            <Button Style="{StaticResource ChartColumn}" Padding="10,8" Margin="0,0,6,2" Tag="{Binding}"
+                    AutomationProperties.Name="{Binding Name}" ToolTip="查看這個分類的明細"
+                    Click="CatLegend_Click" MouseEnter="CatLegend_MouseEnter" MouseLeave="CatLegend_MouseLeave">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Ellipse Width="10" Height="10" Fill="{Binding Brush}" VerticalAlignment="Center"/>
+                        <StackPanel Grid.Column="1" Margin="10,0,8,0">
+                            <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding Detail}" FontSize="11" Foreground="{StaticResource SubtleBrush}"
+                                       Margin="0,1,0,0" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                        <TextBlock Grid.Column="2" Text="{Binding AmountText}" FontSize="13" FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="3" Text="{Binding ShareText}" FontSize="12" Foreground="{StaticResource MutedBrush}"
+                                   MinWidth="52" TextAlignment="Right" VerticalAlignment="Center"/>
+                    </Grid>
+                    <ProgressBar Style="{StaticResource SlimProgress}" Height="4" Margin="20,7,0,0"
+                                 Value="{Binding Share, Mode=OneWay}" Foreground="{Binding Brush}"/>
+                </StackPanel>
+            </Button>
+        </DataTemplate>
     </Window.Resources>
 
     <Grid>
@@ -352,6 +383,8 @@
                     <RadioButton x:Name="TabDebts" Style="{StaticResource TabRadio}" Content="欠款紀錄"
                                  GroupName="Tabs" Checked="Tab_Checked"/>
                     <RadioButton x:Name="TabGoals" Style="{StaticResource TabRadio}" Content="存錢目標"
+                                 GroupName="Tabs" Checked="Tab_Checked"/>
+                    <RadioButton x:Name="TabStats" Style="{StaticResource TabRadio}" Content="支出圖表"
                                  GroupName="Tabs" Checked="Tab_Checked"/>
                 </StackPanel>
             </DockPanel>
@@ -512,6 +545,16 @@
                         </Border>
                         <Button Style="{StaticResource OutlineButton}" Content="本月" Margin="10,0,0,0" Click="ThisMonth_Click"/>
                         <Button Style="{StaticResource OutlineButton}" Content="全部期間" Margin="8,0,0,0" Click="AllPeriod_Click"/>
+                        <!-- 從支出圖表點分類過來時的分類篩選 -->
+                        <Border x:Name="CatChip" Style="{StaticResource Pill}" Background="{StaticResource InkBrush}"
+                                Padding="12,0,4,0" Height="30" CornerRadius="15" Margin="12,0,0,0" Visibility="Collapsed">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock x:Name="CatChipText" Foreground="White" FontSize="12" FontWeight="SemiBold"
+                                           VerticalAlignment="Center"/>
+                                <Button Style="{StaticResource IconButton}" Content="&#xE711;" Width="24" Height="24" FontSize="10"
+                                        Foreground="#AEB6C3" Margin="4,0,0,0" ToolTip="清除分類篩選" Click="ClearCatFilter_Click"/>
+                            </StackPanel>
+                        </Border>
                         <TextBlock x:Name="RecCount" Foreground="{StaticResource SubtleBrush}" FontSize="13"
                                    VerticalAlignment="Center" Margin="16,0,0,0"/>
                     </StackPanel>
@@ -932,6 +975,155 @@
                                            FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"
                                            TextAlignment="Center" IsHitTestVisible="False"/>
                             </Grid>
+                        </DockPanel>
+                    </Border>
+                </Grid>
+            </Grid>
+
+            <!-- 支出圖表 -->
+            <Grid x:Name="StatsView" Grid.Row="1" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition/>
+                </Grid.RowDefinitions>
+
+                <!-- 期間 -->
+                <DockPanel Margin="0,0,0,16">
+                    <TextBlock x:Name="StatWalletText" DockPanel.Dock="Right" Foreground="{StaticResource SubtleBrush}"
+                               FontSize="13" VerticalAlignment="Center"/>
+                    <StackPanel Orientation="Horizontal">
+                        <Border Style="{StaticResource Card}" CornerRadius="10" Padding="3">
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="StatPrevBtn" Style="{StaticResource IconButton}" Content="&#xE76B;" Height="32" Width="32"
+                                        ToolTip="上一期" Click="StatPrev_Click"/>
+                                <TextBlock x:Name="StatPeriodText" MinWidth="118" FontSize="13" FontWeight="SemiBold"
+                                           TextAlignment="Center" VerticalAlignment="Center"/>
+                                <Button x:Name="StatNextBtn" Style="{StaticResource IconButton}" Content="&#xE76C;" Height="32" Width="32"
+                                        ToolTip="下一期" Click="StatNext_Click"/>
+                            </StackPanel>
+                        </Border>
+                        <Button Style="{StaticResource OutlineButton}" Content="本月" Margin="10,0,0,0" Click="StatThisMonth_Click"/>
+                        <Button Style="{StaticResource OutlineButton}" Content="今年" Margin="8,0,0,0" Click="StatThisYear_Click"/>
+                        <Button Style="{StaticResource OutlineButton}" Content="全部期間" Margin="8,0,0,0" Click="StatAll_Click"/>
+                    </StackPanel>
+                </DockPanel>
+
+                <!-- 統計卡 -->
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.35*"/>
+                        <ColumnDefinition/>
+                        <ColumnDefinition/>
+                        <ColumnDefinition/>
+                    </Grid.ColumnDefinitions>
+                    <Border Background="{StaticResource HeroBrush}" CornerRadius="12" Padding="22,16">
+                        <StackPanel>
+                            <Grid>
+                                <TextBlock Text="本期支出" Foreground="#AEB6C3" FontSize="13"/>
+                                <TextBlock Text="&#xE9D2;" Style="{StaticResource Icon}" Foreground="#AEB6C3"
+                                           FontSize="16" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <TextBlock x:Name="StatExpenseText" Text="0" Foreground="White" FontSize="32" FontWeight="Bold"
+                                       Margin="0,6,0,0" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock x:Name="StatExpenseSub" Foreground="#8B95A5" FontSize="12" Margin="0,2,0,0"
+                                       TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="1" Style="{StaticResource StatCard}">
+                        <StackPanel>
+                            <Grid>
+                                <TextBlock x:Name="StatCompareLabel" Text="與上個月相比" Style="{StaticResource StatLabel}"/>
+                                <Border Style="{StaticResource StatIcon}" Background="{StaticResource GhostBrush}">
+                                    <TextBlock Text="&#xE8AB;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource MutedBrush}"/>
+                                </Border>
+                            </Grid>
+                            <TextBlock x:Name="StatCompareText" Text="—" Style="{StaticResource StatValue}"/>
+                            <TextBlock x:Name="StatCompareSub" Style="{StaticResource StatSub}" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="2" Style="{StaticResource StatCard}">
+                        <StackPanel>
+                            <Grid>
+                                <TextBlock Text="平均每天" Style="{StaticResource StatLabel}"/>
+                                <Border Style="{StaticResource StatIcon}" Background="{StaticResource GhostBrush}">
+                                    <TextBlock Text="&#xE787;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource MutedBrush}"/>
+                                </Border>
+                            </Grid>
+                            <TextBlock x:Name="StatAvgText" Text="0" Style="{StaticResource StatValue}"/>
+                            <TextBlock x:Name="StatAvgSub" Style="{StaticResource StatSub}" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="3" Style="{StaticResource StatCard}">
+                        <StackPanel>
+                            <Grid>
+                                <TextBlock Text="最大一筆" Style="{StaticResource StatLabel}"/>
+                                <Border Style="{StaticResource StatIcon}" Background="{StaticResource ExpSoftBrush}">
+                                    <TextBlock Text="&#xE74B;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource ExpBrush}"/>
+                                </Border>
+                            </Grid>
+                            <TextBlock x:Name="StatMaxText" Text="—" Style="{StaticResource StatValue}"/>
+                            <TextBlock x:Name="StatMaxSub" Style="{StaticResource StatSub}" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- 圖表 -->
+                <Grid Grid.Row="2" Margin="0,16,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.1*"/>
+                        <ColumnDefinition Width="16"/>
+                        <ColumnDefinition/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Style="{StaticResource Card}" Padding="20,16,10,14">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,10,10">
+                                <TextBlock Text="支出分類" Style="{StaticResource SectionTitle}"/>
+                                <TextBlock Text="點分類可查看明細" Foreground="{StaticResource SubtleBrush}" FontSize="12"
+                                           VerticalAlignment="Center" Margin="10,1,0,0"/>
+                            </StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition/>
+                                </Grid.ColumnDefinitions>
+                                <local:DonutChart x:Name="Donut" Width="210" Height="210" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                                <ItemsControl x:Name="CatLegend" Grid.Column="1" ItemTemplate="{StaticResource CatLegendTemplate}"
+                                              VerticalAlignment="Center">
+                                    <ItemsControl.Template>
+                                        <ControlTemplate TargetType="ItemsControl">
+                                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                                          Focusable="False">
+                                                <ItemsPresenter/>
+                                            </ScrollViewer>
+                                        </ControlTemplate>
+                                    </ItemsControl.Template>
+                                </ItemsControl>
+                                <TextBlock x:Name="CatEmpty" Grid.Column="1" Text="這段期間沒有支出" Foreground="{StaticResource SubtleBrush}"
+                                           FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                            </Grid>
+                        </DockPanel>
+                    </Border>
+
+                    <Border Grid.Column="2" Style="{StaticResource Card}" Padding="16,16,18,12">
+                        <DockPanel>
+                            <DockPanel DockPanel.Dock="Top" Margin="4,0,0,12">
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{StaticResource IncBrush}"/>
+                                    <TextBlock Text="收入" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="5,0,12,0"/>
+                                    <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{StaticResource ExpBrush}"/>
+                                    <TextBlock Text="支出" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="5,0,12,0"/>
+                                    <Rectangle Width="14" Height="2" Fill="{StaticResource InkBrush}"/>
+                                    <TextBlock Text="結餘" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="5,0,0,0"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock x:Name="BarTitle" Text="近 12 個月收支" Style="{StaticResource SectionTitle}"/>
+                                    <TextBlock Text="點月份可切換" Foreground="{StaticResource SubtleBrush}" FontSize="12"
+                                               VerticalAlignment="Center" Margin="10,1,0,0"/>
+                                </StackPanel>
+                            </DockPanel>
+                            <local:MonthBarChart x:Name="Bars"/>
                         </DockPanel>
                     </Border>
                 </Grid>

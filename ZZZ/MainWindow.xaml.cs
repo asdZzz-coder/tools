@@ -40,6 +40,9 @@ namespace ZZZ
             RefreshAll();
             RefreshDebts();
             RefreshGoals();
+            Donut.SliceClicked += s => ShowCategoryRecords(s.Name);
+            Donut.HoverChanged += HighlightLegend;
+            Bars.MonthClicked += m => { statsPeriod = m; RefreshStats(); };
 
             SourceInitialized += (_, _) => TintTitleBar();
             Loaded += (_, _) =>
@@ -69,17 +72,20 @@ namespace ZZZ
 
         void Tab_Checked(object sender, RoutedEventArgs e)
         {
-            if (GoalsView == null) return;
+            if (StatsView == null) return;
             static Visibility Show(RadioButton tab) => tab.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
             RecordsView.Visibility = Show(TabRecords);
             DebtsView.Visibility = Show(TabDebts);
             GoalsView.Visibility = Show(TabGoals);
+            StatsView.Visibility = Show(TabStats);
+            RefreshStats();
         }
 
         /// <summary>重新載入所有分頁(匯入資料後使用)。</summary>
         void ReloadEverything()
         {
             selWallet = null;
+            catFilter = null;
             LoadCategories();
             RefreshAll();
             RefreshDebts();
@@ -230,12 +236,21 @@ namespace ZZZ
             if (RecCategory != null) LoadCategories();
         }
 
-        string Month => MonthBox.Text.Trim();
+        string Month => MonthBox.Text.Trim(); // yyyy-MM、yyyy(整年)或空白(全部期間)
+        string? catFilter; // 從支出圖表點分類過來時,只顯示該分類的支出
+
+        List<RecordRow> FilteredRecords()
+        {
+            var rows = db.Records(Month, selWallet);
+            return catFilter == null ? rows : rows.Where(r => !r.IsIncome && r.Category == catFilter).ToList();
+        }
 
         void RefreshRecords()
         {
-            var rows = db.Records(Month, selWallet);
+            var rows = FilteredRecords();
             RecordGrid.ItemsSource = rows;
+            CatChip.Visibility = catFilter == null ? Visibility.Collapsed : Visibility.Visible;
+            CatChipText.Text = $"{Database.Expense} · {catFilter}";
             double inc = rows.Where(r => r.IsIncome).Sum(r => r.Amount);
             double exp = rows.Where(r => !r.IsIncome).Sum(r => r.Amount);
             double bal = db.Wallets().Where(w => selWallet == null || w.Id == selWallet).Sum(w => w.Balance);
@@ -253,10 +268,23 @@ namespace ZZZ
             NetSub.Text = period;
             RecCount.Text = $"共 {rows.Count} 筆";
             RecEmpty.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            RefreshStats();
+        }
+
+        void ClearCatFilter_Click(object sender, RoutedEventArgs e)
+        {
+            catFilter = null;
+            RefreshRecords();
         }
 
         void ShiftMonth(int delta)
         {
+            if (Month.Length == 4 && int.TryParse(Month, out var year)) // 從圖表帶過來的整年期間
+            {
+                MonthBox.Text = (year + delta).ToString();
+                RefreshRecords();
+                return;
+            }
             var d = DateTime.TryParseExact(Month + "-01", "yyyy-MM-dd", null,
                 System.Globalization.DateTimeStyles.None, out var m) ? m : new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
             MonthBox.Text = d.AddMonths(delta).ToString("yyyy-MM");
@@ -392,7 +420,7 @@ namespace ZZZ
             var choice = DialogWindow.Choose(this, "匯出資料", "選擇要匯出的內容:",
             [
                 ("", "完整備份(.json)", "所有錢包、收支、欠款、分類與存錢目標,可用「匯入資料」完整還原"),
-                ("", "目前篩選的收支記錄(.csv)", $"{period} · {wallet} · 共 {db.Records(Month, selWallet).Count} 筆,可用 Excel 開啟"),
+                ("", "目前篩選的收支記錄(.csv)", $"{period} · {wallet}{(catFilter != null ? $" · {catFilter}" : "")} · 共 {FilteredRecords().Count} 筆,可用 Excel 開啟"),
                 ("", "全部收支記錄(.csv)", $"所有期間與錢包 · 共 {db.Records("", null).Count} 筆"),
             ]);
             if (choice == null) return;
@@ -408,7 +436,7 @@ namespace ZZZ
             try
             {
                 if (json) DataTransfer.ExportBackup(db, dlg.FileName);
-                else DataTransfer.ExportCsv(choice == 1 ? db.Records(Month, selWallet) : db.Records("", null), dlg.FileName);
+                else DataTransfer.ExportCsv(choice == 1 ? FilteredRecords() : db.Records("", null), dlg.FileName);
             }
             catch (IOException ex) { DialogWindow.Error(this, "匯出失敗", ex.Message); return; }
             DialogWindow.Success(this, "匯出完成", $"已匯出至\n{dlg.FileName}");
@@ -827,6 +855,155 @@ namespace ZZZ
                 return;
             db.DeleteDeposit(d.Id);
             RefreshGoals();
+        }
+
+        // ================= 支出圖表 =================
+        string statsPeriod = DateTime.Today.ToString("yyyy-MM"); // yyyy-MM 一個月、yyyy 一整年、空白為全部期間
+
+        static DateTime ThisMonth => new(DateTime.Today.Year, DateTime.Today.Month, 1);
+
+        static string PeriodName(string p) => p.Length switch
+        {
+            0 => "全部期間",
+            4 => $"{p} 年",
+            _ => DateTime.ParseExact(p, "yyyy-MM", null).ToString("yyyy 年 M 月"),
+        };
+
+        void RefreshStats()
+        {
+            if (StatsView.Visibility != Visibility.Visible) return; // 切到這個分頁時才計算
+            var p = statsPeriod;
+            bool isYear = p.Length == 4;
+            var spent = db.Records(p, selWallet).Where(r => !r.IsIncome).ToList();
+            double total = spent.Sum(r => r.Amount);
+
+            StatPeriodText.Text = PeriodName(p);
+            StatPrevBtn.IsEnabled = StatNextBtn.IsEnabled = p != "";
+            StatPrevBtn.ToolTip = isYear ? "上一年" : "上個月";
+            StatNextBtn.ToolTip = isYear ? "下一年" : "下個月";
+            StatWalletText.Text = (WalletList.SelectedItem as WalletItem)?.Name ?? "全部錢包";
+            StatExpenseText.Text = Money(total);
+            StatExpenseSub.Text = $"{PeriodName(p)} · {spent.Count} 筆";
+
+            // 與上一期相比
+            var last = isYear ? "去年" : "上個月";
+            StatCompareLabel.Text = p == "" ? "與上一期相比" : $"與{last}相比";
+            StatCompareText.Foreground = (Brush)FindResource("TextBrush");
+            if (p == "")
+            {
+                StatCompareText.Text = "—";
+                StatCompareSub.Text = "選擇月份或年份才能比較";
+            }
+            else
+            {
+                double before = db.Records(ShiftPeriod(p, -1), selWallet).Where(r => !r.IsIncome).Sum(r => r.Amount);
+                double diff = total - before;
+                if (before <= 0)
+                {
+                    StatCompareText.Text = "—";
+                    StatCompareSub.Text = $"{last}沒有支出";
+                }
+                else
+                {
+                    StatCompareText.Text = (diff > 0 ? "+" : diff < 0 ? "−" : "") + $"{Math.Abs(diff) / before:P0}";
+                    StatCompareText.Foreground = (Brush)FindResource(diff > 0 ? "ExpBrush" : diff < 0 ? "IncBrush" : "TextBrush");
+                    StatCompareSub.Text = diff > 0 ? $"比{last}多花 {Money(diff)}"
+                                        : diff < 0 ? $"比{last}少花 {Money(-diff)}" : $"跟{last}一樣";
+                }
+            }
+
+            // 平均每天:本月、今年只算到今天
+            var (days, daysNote) = CountDays(p, spent);
+            StatAvgText.Text = Money(days > 0 ? total / days : 0);
+            StatAvgSub.Text = days > 0 ? $"{daysNote}共 {days} 天" : "這段期間沒有支出";
+
+            var big = spent.MaxBy(r => r.Amount);
+            StatMaxText.Text = big == null ? "—" : Money(big.Amount);
+            StatMaxSub.Text = big == null ? "這段期間沒有支出"
+                : $"{big.Category} · {big.Date}" + (big.Note != "" ? $" · {big.Note}" : "");
+
+            // 分類圓環圖與列表
+            var cats = db.Categories(Database.Expense);
+            var stats = spent.GroupBy(r => r.Category)
+                .Select(g => (Name: g.Key, Amount: g.Sum(r => r.Amount), Count: g.Count()))
+                .OrderByDescending(x => x.Amount)
+                .Select(x => new CategoryStat(x.Name, x.Amount, x.Count, total > 0 ? x.Amount / total : 0,
+                                              ChartPalette.For(x.Name, cats)))
+                .ToList();
+            Donut.SetData(stats, "總支出", Money(total), $"{stats.Count} 個分類");
+            CatLegend.ItemsSource = stats;
+            CatEmpty.Visibility = stats.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+            // 每月收支:選整年時顯示該年 1~12 月;選月份時顯示近 12 個月,選到更早的月份則以它為最後一個月
+            DateTime end = ThisMonth;
+            if (isYear) end = new DateTime(int.Parse(p), 12, 1);
+            else if (p != "")
+            {
+                var sel = DateTime.ParseExact(p, "yyyy-MM", null);
+                if (sel > end || sel <= end.AddMonths(-12)) end = sel;
+            }
+            var start = end.AddMonths(-11);
+            var totals = db.MonthTotals(selWallet).ToDictionary(m => m.Month);
+            var months = Enumerable.Range(0, 12)
+                .Select(i => start.AddMonths(i).ToString("yyyy-MM"))
+                .Select(m => totals.TryGetValue(m, out var t) ? t : new MonthTotal(m, 0, 0))
+                .ToList();
+            Bars.SetData(months, isYear || p == "" ? null : p);
+            BarTitle.Text = isYear ? $"{p} 年每月收支"
+                : end == ThisMonth ? "近 12 個月收支" : $"{start:yyyy/M} – {end:yyyy/M} 收支";
+        }
+
+        /// <summary>計算平均用的天數;本月與今年只算到今天,全部期間從第一筆支出算起。</summary>
+        static (int Days, string Note) CountDays(string p, List<RecordRow> spent)
+        {
+            var today = DateTime.Today;
+            if (p == "")
+            {
+                if (spent.Count == 0) return (0, "");
+                var first = spent.Select(r => DateTime.TryParse(r.Date, out var d) ? d : today).Min();
+                return (Math.Max((today - first).Days + 1, 1), $"從 {first:yyyy-MM-dd} 起");
+            }
+            if (p.Length == 4)
+            {
+                int y = int.Parse(p);
+                return y == today.Year ? (today.DayOfYear, "今年到今天") : (DateTime.IsLeapYear(y) ? 366 : 365, "");
+            }
+            var m = DateTime.ParseExact(p, "yyyy-MM", null);
+            return m == ThisMonth ? (today.Day, "本月到今天") : (DateTime.DaysInMonth(m.Year, m.Month), "");
+        }
+
+        /// <summary>期間往前或往後移;整年移一年,月份移一個月。</summary>
+        static string ShiftPeriod(string p, int delta) => p.Length == 4
+            ? (int.Parse(p) + delta).ToString()
+            : DateTime.ParseExact(p, "yyyy-MM", null).AddMonths(delta).ToString("yyyy-MM");
+
+        void StatPrev_Click(object sender, RoutedEventArgs e) { statsPeriod = ShiftPeriod(statsPeriod, -1); RefreshStats(); }
+        void StatNext_Click(object sender, RoutedEventArgs e) { statsPeriod = ShiftPeriod(statsPeriod, 1); RefreshStats(); }
+        void StatThisMonth_Click(object sender, RoutedEventArgs e) { statsPeriod = ThisMonth.ToString("yyyy-MM"); RefreshStats(); }
+        void StatThisYear_Click(object sender, RoutedEventArgs e) { statsPeriod = DateTime.Today.Year.ToString(); RefreshStats(); }
+        void StatAll_Click(object sender, RoutedEventArgs e) { statsPeriod = ""; RefreshStats(); }
+
+        static CategoryStat StatOf(object sender) => (CategoryStat)((FrameworkElement)sender).Tag;
+
+        void CatLegend_Click(object sender, RoutedEventArgs e) => ShowCategoryRecords(StatOf(sender).Name);
+        void CatLegend_MouseEnter(object sender, MouseEventArgs e) => Donut.Highlight(StatOf(sender).Name);
+        void CatLegend_MouseLeave(object sender, MouseEventArgs e) => Donut.Highlight(null);
+
+        /// <summary>滑過圓環圖某一塊時,列表只留該分類清楚,其他淡化。</summary>
+        void HighlightLegend(string? name)
+        {
+            foreach (var s in CatLegend.Items.Cast<CategoryStat>())
+                if (CatLegend.ItemContainerGenerator.ContainerFromItem(s) is UIElement el)
+                    el.Opacity = name == null || s.Name == name ? 1 : 0.4;
+        }
+
+        /// <summary>切到收支記錄,只顯示目前圖表期間、該分類的支出。</summary>
+        void ShowCategoryRecords(string category)
+        {
+            catFilter = category;
+            MonthBox.Text = statsPeriod;
+            TabRecords.IsChecked = true;
+            RefreshRecords();
         }
 
         // ================= 其他 =================
