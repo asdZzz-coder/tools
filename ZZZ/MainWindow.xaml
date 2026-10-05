@@ -364,12 +364,26 @@
 
                 <!-- 錢包操作 -->
                 <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,18">
-                    <Button Style="{StaticResource AccentButton}" Click="AddWallet_Click">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE710;" Style="{StaticResource Icon}" FontSize="12"/>
-                            <TextBlock Text="新增錢包" Margin="8,0,0,0"/>
-                        </StackPanel>
-                    </Button>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition/>
+                            <ColumnDefinition Width="8"/>
+                            <ColumnDefinition/>
+                        </Grid.ColumnDefinitions>
+                        <Button Style="{StaticResource AccentButton}" Click="AddWallet_Click" Padding="8,0">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE710;" Style="{StaticResource Icon}" FontSize="12"/>
+                                <TextBlock Text="新增錢包" Margin="6,0,0,0"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="TransferBtn" Grid.Column="2" Style="{StaticResource OutlineButton}" Click="Transfer_Click" Padding="8,0"
+                                ToolTip="把錢從一個錢包搬到另一個(信用卡請用「繳卡費」)">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE8AB;" Style="{StaticResource Icon}" FontSize="12"/>
+                                <TextBlock Text="轉移資金" Margin="6,0,0,0"/>
+                            </StackPanel>
+                        </Button>
+                    </Grid>
                     <Grid Margin="0,8,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition/>

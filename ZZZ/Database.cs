@@ -3,7 +3,8 @@ using Microsoft.Data.Sqlite;
 
 namespace ZZZ
 {
-    /// <param name="Kind">空字串為一般錢包;<see cref="Database.CreditCard"/> 為信用卡(餘額為負代表欠款)</param>
+    /// <param name="Kind">空字串為一般錢包;<see cref="Database.Savings"/> 為存錢用錢包(不算進流動資金);
+    /// <see cref="Database.CreditCard"/> 為信用卡(餘額為負代表欠款)</param>
     /// <param name="ClosingDay">信用卡每月結帳日(1–31,月份天數不夠時為月底)</param>
     /// <param name="DueDay">信用卡每月繳款日</param>
     /// <param name="PayWalletId">繳卡費預設從哪個錢包付</param>
@@ -11,6 +12,7 @@ namespace ZZZ
                          int ClosingDay = 0, int DueDay = 0, long? PayWalletId = null)
     {
         public bool IsCard => Kind == Database.CreditCard;
+        public bool IsSavings => Kind == Database.Savings;
         public double Owed => Math.Max(-Balance, 0);
     }
 
@@ -86,11 +88,12 @@ namespace ZZZ
         public virtual string AmountText => (IsIncome ? "+" : "−") + Amount.ToString("N0");
     }
 
-    /// <summary>錢包之間的轉帳(目前只有繳卡費),和收支記錄列在同一個清單,但不算收入或支出。</summary>
+    /// <summary>錢包之間的轉帳(轉移資金、繳卡費),和收支記錄列在同一個清單,但不算收入或支出。</summary>
     /// <param name="Sign">只看某個錢包時,轉出為「−」、轉入為「+」;看全部錢包時不加正負號</param>
+    /// <param name="ToCard">轉進信用卡,也就是繳卡費</param>
     public record TransferRow(long Id, string Date, long FromId, string From, long ToId, string To,
-                              double Amount, string Note, string Sign)
-        : RecordRow(Id, Date, $"{From} → {To}", Database.Transfer, Database.CardPayment, Amount, Note)
+                              double Amount, string Note, string Sign, bool ToCard)
+        : RecordRow(Id, Date, $"{From} → {To}", Database.Transfer, ToCard ? Database.CardPayment : Database.MoveFunds, Amount, Note)
     {
         public override bool IsTransfer => true;
         public override string AmountText => Sign + Amount.ToString("N0");
@@ -190,7 +193,8 @@ namespace ZZZ
         public const string IOwe = "我欠別人", TheyOwe = "別人欠我";
         public const string Yearly = "每年"; // goals.repeat
         public const string CreditCard = "信用卡"; // wallets.kind
-        public const string Transfer = "轉帳", CardPayment = "繳卡費"; // 清單中轉帳列的類型、分類
+        public const string Savings = "存錢"; // wallets.kind:存錢用錢包,不算進流動資金
+        public const string Transfer = "轉帳", CardPayment = "繳卡費", MoveFunds = "轉移資金"; // 清單中轉帳列的類型、分類
 
         static readonly string[] DefaultExpense = ["餐飲", "交通", "購物", "居住", "娛樂", "醫療", "其他"];
         static readonly string[] DefaultIncome = ["薪資", "獎金", "投資", "其他"];
@@ -360,11 +364,12 @@ namespace ZZZ
         }
 
         /// <returns>新錢包 id;名稱重複時回傳 null</returns>
-        public long? AddWallet(string name, double initial)
+        /// <param name="kind">空字串為一般錢包;<see cref="Savings"/> 為存錢用錢包</param>
+        public long? AddWallet(string name, double initial, string kind = "")
         {
             try
             {
-                Exec($"INSERT INTO wallets(name, initial, sort) VALUES(@p0,@p1,{NextWalletSort})", name, initial);
+                Exec($"INSERT INTO wallets(name, initial, sort, kind) VALUES(@p0,@p1,{NextWalletSort},@p2)", name, initial, kind);
                 return (long)Scalar("SELECT last_insert_rowid()")!;
             }
             catch (SqliteException) { return null; }
@@ -425,6 +430,7 @@ namespace ZZZ
         public void DeleteWallet(long id) => InTransaction(() =>
         {
             var names = Query("SELECT id, name FROM wallets", r => (Id: r.GetInt64(0), Name: Str(r, 1))).ToDictionary(x => x.Id, x => x.Name);
+            bool card = Convert.ToString(Scalar("SELECT kind FROM wallets WHERE id=@p0", id)) == CreditCard;
             var transfers = Query("SELECT date, from_wallet, to_wallet, amount, note FROM transfers WHERE from_wallet=@p0 OR to_wallet=@p0",
                 r => (Date: Str(r, 0), From: r.GetInt64(1), To: r.GetInt64(2), Amount: Num(r, 3), Note: Str(r, 4)), id);
             foreach (var t in transfers)
@@ -432,7 +438,7 @@ namespace ZZZ
                 bool outgoing = t.To == id; // 對方把錢轉進被刪的錢包 → 對方的支出
                 long other = outgoing ? t.From : t.To;
                 if (other == id || !names.ContainsKey(other)) continue;
-                var note = outgoing ? $"繳「{names[id]}」卡費" : $"由「{names[id]}」轉入";
+                var note = !outgoing ? $"由「{names[id]}」轉入" : card ? $"繳「{names[id]}」卡費" : $"轉到「{names[id]}」";
                 AddRecord(t.Date, outgoing ? Expense : Income, "其他", t.Amount, t.Note != "" ? $"{note} · {t.Note}" : note, other);
             }
             Exec("DELETE FROM transfers WHERE from_wallet=@p0 OR to_wallet=@p0", id);
@@ -442,10 +448,10 @@ namespace ZZZ
             Exec("DELETE FROM wallets WHERE id=@p0", id);
         });
 
-        // ---------- 轉帳(繳卡費) ----------
+        // ---------- 轉帳(轉移資金、繳卡費) ----------
         /// <param name="walletId">只列出這個錢包轉出或轉入的;null 為全部</param>
         public List<TransferRow> Transfers(string month, long? walletId) => Query(
-            "SELECT t.id, t.date, t.from_wallet, f.name, t.to_wallet, w.name, t.amount, t.note FROM transfers t " +
+            "SELECT t.id, t.date, t.from_wallet, f.name, t.to_wallet, w.name, t.amount, t.note, w.kind FROM transfers t " +
             "LEFT JOIN wallets f ON f.id = t.from_wallet LEFT JOIN wallets w ON w.id = t.to_wallet " +
             "WHERE t.date LIKE @p0" + (walletId != null ? " AND (t.from_wallet = @p1 OR t.to_wallet = @p1)" : "") +
             " ORDER BY t.date DESC, t.id DESC",
@@ -453,7 +459,8 @@ namespace ZZZ
             {
                 long from = r.GetInt64(2), to = r.GetInt64(4);
                 var sign = walletId == null ? "" : walletId == from ? "−" : "+";
-                return new TransferRow(r.GetInt64(0), Str(r, 1), from, Str(r, 3), to, Str(r, 5), Num(r, 6), Str(r, 7), sign);
+                return new TransferRow(r.GetInt64(0), Str(r, 1), from, Str(r, 3), to, Str(r, 5), Num(r, 6), Str(r, 7), sign,
+                                       Str(r, 8) == CreditCard);
             },
             walletId != null ? new object?[] { month + "%", walletId } : [month + "%"]);
 
@@ -461,8 +468,9 @@ namespace ZZZ
             Exec("INSERT INTO transfers(date, from_wallet, to_wallet, amount, note) VALUES(@p0,@p1,@p2,@p3,@p4)",
                  date, from, to, amount, note);
 
-        public void UpdateTransfer(long id, string date, long from, double amount, string note) =>
-            Exec("UPDATE transfers SET date=@p0, from_wallet=@p1, amount=@p2, note=@p3 WHERE id=@p4", date, from, amount, note, id);
+        public void UpdateTransfer(long id, string date, long from, long to, double amount, string note) =>
+            Exec("UPDATE transfers SET date=@p0, from_wallet=@p1, to_wallet=@p2, amount=@p3, note=@p4 WHERE id=@p5",
+                 date, from, to, amount, note, id);
 
         // ---------- 收支記錄 ----------
         public List<RecordRow> Records(string month, long? walletId)
