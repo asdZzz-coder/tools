@@ -794,6 +794,33 @@ namespace ZZZ
             DialogWindow.Success(this, "匯入完成", $"已新增 {result.Rows.Count} 筆收支記錄。");
         }
 
+        /// <summary>刪除全部資料:先確認一次,再要求輸入「刪除」做第二次確認。刪除前會自動存一份 .json 備份。</summary>
+        void ClearAll_Click(object sender, RoutedEventArgs e)
+        {
+            const string Word = "刪除";
+            if (!DialogWindow.Confirm(this, "刪除全部資料",
+                    $"目前有錢包 {db.Count("wallets")} 個、收支 {db.Count("records")} 筆、轉帳 {db.Count("transfers")} 筆、" +
+                    $"欠款 {db.Count("debts")} 筆、存錢目標 {db.Count("goals")} 個。\n\n" +
+                    "全部刪除後只會留下空的「現金」錢包與預設分類。\n" +
+                    "刪除前會自動另存一份完整備份,之後可用「匯入資料」還原。", "繼續", danger: true))
+                return;
+            if (DialogWindow.Prompt(this, "再次確認刪除",
+                    $"這個動作會清空所有資料。\n確定要刪除的話,請輸入「{Word}」。",
+                    [new Field("確認文字", Hint: Word)],
+                    v => v[0] == Word ? null : $"請輸入「{Word}」才能刪除", "刪除全部資料", danger: true) == null)
+                return;
+            string backup;
+            try { backup = DataTransfer.SafetyBackup(db); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                DialogWindow.Error(this, "沒有刪除", "無法先備份目前資料,所以沒有刪除任何東西。\n" + ex.Message);
+                return;
+            }
+            db.ClearAll();
+            ReloadEverything();
+            DialogWindow.Success(this, "已刪除全部資料", $"原本的資料已備份至:\n{backup}");
+        }
+
         // ================= 欠款 =================
         void RefreshDebts()
         {

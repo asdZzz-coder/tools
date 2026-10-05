@@ -342,6 +342,13 @@
                             <TextBlock Text="匯入資料" Margin="10,0,0,0"/>
                         </StackPanel>
                     </Button>
+                    <Button x:Name="ClearAllBtn" Style="{StaticResource NavButton}" Click="ClearAll_Click"
+                            AutomationProperties.Name="刪除全部資料">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE74D;" Style="{StaticResource Icon}" FontSize="14" Width="20" Foreground="{DynamicResource ExpBrush}"/>
+                            <TextBlock Text="刪除全部資料" Margin="10,0,0,0" Foreground="{DynamicResource ExpBrush}"/>
+                        </StackPanel>
+                    </Button>
                     <Button Style="{StaticResource NavButton}" Click="CheckUpdate_Click">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE895;" Style="{StaticResource Icon}" FontSize="14" Width="20"/>

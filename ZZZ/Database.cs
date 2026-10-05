@@ -624,6 +624,15 @@ namespace ZZZ
             EnsureDefaults();
         });
 
+        public long Count(string table)
+        {
+            if (!Tables.Contains(table)) throw new ArgumentException(table);
+            return Convert.ToInt64(Scalar($"SELECT COUNT(*) FROM {table}"));
+        }
+
+        /// <summary>刪除全部資料,只留預設的「現金」錢包與預設分類。</summary>
+        public void ClearAll() => ReplaceAll([]);
+
         /// <summary>把目前資料庫完整複製一份到指定檔案。</summary>
         public void BackupTo(string path) => Exec($"VACUUM INTO '{path.Replace("'", "''")}'");
 

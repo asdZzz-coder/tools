@@ -164,10 +164,11 @@ namespace ZZZ
 
         /// <param name="validate">回傳錯誤訊息則留在對話框;回傳 null 表示通過。</param>
         public static string[]? Prompt(Window? owner, string title, string message, Field[] fields,
-                                       Func<string[], string?>? validate = null, string okText = "確定")
+                                       Func<string[], string?>? validate = null, string okText = "確定", bool danger = false)
         {
-            var d = Build(owner, Kind.Input, title, message);
+            var d = Build(owner, danger ? Kind.Danger : Kind.Input, title, message);
             d.OkBtn.Content = okText;
+            if (danger) d.OkBtn.Style = (Style)d.FindResource("DangerSolidButton");
             d.validate = validate;
             foreach (var f in fields)
             {

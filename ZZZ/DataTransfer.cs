@@ -87,6 +87,15 @@ namespace ZZZ
             return path;
         }
 
+        /// <summary>刪除全部資料前先存一份完整備份(.json),可用「匯入資料」還原;回傳檔案路徑。</summary>
+        public static string SafetyBackup(Database db)
+        {
+            Directory.CreateDirectory(BackupDir);
+            var path = Path.Combine(BackupDir, $"刪除前備份_{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            ExportBackup(db, path);
+            return path;
+        }
+
         // ================= CSV =================
         static string Csv(string s) =>
             s.IndexOfAny([',', '"', '\n', '\r']) >= 0 ? "\"" + s.Replace("\"", "\"\"") + "\"" : s;
