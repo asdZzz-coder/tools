@@ -16,24 +16,27 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <Border x:Name="Ico" Width="30" Height="30" CornerRadius="8" Background="{DynamicResource GhostBrush}"
-                        ToolTip="{Binding GoalTip}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Border x:Name="Ico" Grid.RowSpan="2" Width="30" Height="30" CornerRadius="8" Background="{DynamicResource GhostBrush}"
+                        VerticalAlignment="Center" ToolTip="{Binding Tip}">
                     <TextBlock x:Name="IcoText" Text="{Binding Icon}" Style="{StaticResource Icon}" FontSize="14"
                                Foreground="{DynamicResource MutedBrush}"/>
                 </Border>
-                <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
-                    <TextBlock x:Name="Name" Text="{Binding Name}" FontSize="14" TextTrimming="CharacterEllipsis"/>
-                    <!-- 放了存錢目標的錢包:已分配給目標多少、還有多少可自由使用 -->
-                    <TextBlock x:Name="Alloc" Text="{Binding AllocText}" FontSize="11" Foreground="{DynamicResource SubtleBrush}"
-                               Margin="0,1,0,0" TextTrimming="CharacterEllipsis" Visibility="Collapsed"
-                               ToolTip="{Binding GoalTip}"/>
-                </StackPanel>
+                <TextBlock x:Name="Name" Grid.Column="1" Text="{Binding Name}" FontSize="14" TextTrimming="CharacterEllipsis"
+                           Margin="10,0,8,0" VerticalAlignment="Center"/>
+                <!-- 信用卡:本期應繳;放了存錢目標的錢包:還有多少沒分配。橫跨到右邊,金額後面也能放字 -->
+                <TextBlock x:Name="Alloc" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding SubText}" FontSize="11"
+                           Foreground="{DynamicResource SubtleBrush}" Margin="10,1,0,0" TextTrimming="CharacterEllipsis"
+                           Visibility="Collapsed" ToolTip="{Binding Tip}"/>
                 <TextBlock x:Name="Bal" Grid.Column="2" Text="{Binding BalanceText}" FontSize="13"
                            Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center"/>
                 <!-- 滑過時提示可拖曳排序 -->
-                <TextBlock x:Name="Grip" Grid.Column="3" Text="&#xE76F;" Style="{StaticResource Icon}" FontSize="12"
+                <TextBlock x:Name="Grip" Grid.Column="3" Grid.RowSpan="2" Text="&#xE76F;" Style="{StaticResource Icon}" FontSize="12"
                            Foreground="{DynamicResource SubtleBrush}" Margin="8,0,-4,0" Visibility="Hidden"
-                           ToolTip="拖曳可調整順序"/>
+                           VerticalAlignment="Center" ToolTip="拖曳可調整順序"/>
             </Grid>
             <DataTemplate.Triggers>
                 <MultiDataTrigger>
@@ -46,10 +49,10 @@
                 <DataTrigger Binding="{Binding Negative}" Value="True">
                     <Setter TargetName="Bal" Property="Foreground" Value="{DynamicResource ExpBrush}"/>
                 </DataTrigger>
-                <DataTrigger Binding="{Binding HasGoals}" Value="True">
+                <DataTrigger Binding="{Binding HasSub}" Value="True">
                     <Setter TargetName="Alloc" Property="Visibility" Value="Visible"/>
                 </DataTrigger>
-                <DataTrigger Binding="{Binding OverAllocated}" Value="True">
+                <DataTrigger Binding="{Binding Warn}" Value="True">
                     <Setter TargetName="Alloc" Property="Foreground" Value="{DynamicResource WarnBrush}"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
@@ -60,6 +63,18 @@
                 </DataTrigger>
             </DataTemplate.Triggers>
         </DataTemplate>
+
+        <!-- 深色大卡片上的按鈕(大卡片在淺色、深色模式都是深底) -->
+        <Style x:Key="HeroButton" TargetType="Button" BasedOn="{StaticResource BtnBase}">
+            <Setter Property="Background" Value="#2EFFFFFF"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#4DFFFFFF"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
 
         <!-- 統計卡(白) -->
         <Style x:Key="StatCard" TargetType="Border" BasedOn="{StaticResource Card}">
@@ -361,10 +376,11 @@
                             <ColumnDefinition Width="8"/>
                             <ColumnDefinition/>
                         </Grid.ColumnDefinitions>
-                        <Button x:Name="RenameWalletBtn" Style="{StaticResource GhostButton}" Click="RenameWallet_Click" Padding="8,0">
+                        <Button x:Name="EditWalletBtn" Style="{StaticResource GhostButton}" Click="EditWallet_Click" Padding="8,0"
+                                ToolTip="改名稱;信用卡可以改結帳日、繳款日與繳卡費的錢包">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="&#xE70F;" Style="{StaticResource Icon}" FontSize="12"/>
-                                <TextBlock Text="重新命名" Margin="6,0,0,0"/>
+                                <TextBlock Text="編輯錢包" Margin="6,0,0,0"/>
                             </StackPanel>
                         </Button>
                         <Button x:Name="DeleteWalletBtn" Grid.Column="2" Style="{StaticResource DangerButton}" Click="DeleteWallet_Click" Padding="8,0">
@@ -424,12 +440,22 @@
                         <ColumnDefinition/>
                         <ColumnDefinition/>
                     </Grid.ColumnDefinitions>
-                    <Border Background="{DynamicResource HeroBrush}" CornerRadius="12" Padding="22,16">
+                    <Border x:Name="HeroCard" Background="{DynamicResource HeroBrush}" CornerRadius="12" Padding="22,16">
                         <StackPanel>
                             <Grid>
-                                <TextBlock Text="目前總餘額" Foreground="#AEB6C3" FontSize="13"/>
-                                <TextBlock Text="&#xE8C7;" Style="{StaticResource Icon}" Foreground="#AEB6C3"
+                                <TextBlock x:Name="HeroLabel" Text="目前總餘額" Foreground="#AEB6C3" FontSize="13"
+                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"/>
+                                <TextBlock x:Name="HeroIcon" Text="&#xE8C7;" Style="{StaticResource Icon}" Foreground="#AEB6C3"
                                            FontSize="16" HorizontalAlignment="Right"/>
+                                <!-- 選到信用卡時顯示 -->
+                                <Button x:Name="PayCardBtn" Style="{StaticResource HeroButton}" HorizontalAlignment="Right"
+                                        Height="28" Padding="10,0" Margin="0,-6,-8,-6" Visibility="Collapsed"
+                                        Click="PayCard_Click" ToolTip="從連結的錢包繳這張卡的帳單">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE8C7;" Style="{StaticResource Icon}" FontSize="11"/>
+                                        <TextBlock Text="繳卡費" Margin="6,0,0,0" FontSize="12"/>
+                                    </StackPanel>
+                                </Button>
                             </Grid>
                             <TextBlock x:Name="BalanceText" Text="0" Foreground="White" FontSize="32" FontWeight="Bold"
                                        Margin="0,6,0,0" TextTrimming="CharacterEllipsis"/>
@@ -596,6 +622,11 @@
                                                     <Setter TargetName="P" Property="Background" Value="{DynamicResource IncSoftBrush}"/>
                                                     <Setter TargetName="T" Property="Foreground" Value="{DynamicResource IncBrush}"/>
                                                 </DataTrigger>
+                                                <!-- 繳卡費:錢包之間搬錢,不是收入也不是支出 -->
+                                                <DataTrigger Binding="{Binding IsTransfer}" Value="True">
+                                                    <Setter TargetName="P" Property="Background" Value="{DynamicResource GhostBrush}"/>
+                                                    <Setter TargetName="T" Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+                                                </DataTrigger>
                                             </DataTemplate.Triggers>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
@@ -609,6 +640,9 @@
                                             <DataTemplate.Triggers>
                                                 <DataTrigger Binding="{Binding IsIncome}" Value="True">
                                                     <Setter TargetName="A" Property="Foreground" Value="{DynamicResource IncBrush}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsTransfer}" Value="True">
+                                                    <Setter TargetName="A" Property="Foreground" Value="{DynamicResource TextBrush}"/>
                                                 </DataTrigger>
                                             </DataTemplate.Triggers>
                                         </DataTemplate>

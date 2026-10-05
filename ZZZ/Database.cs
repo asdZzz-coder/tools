@@ -3,13 +3,97 @@ using Microsoft.Data.Sqlite;
 
 namespace ZZZ
 {
-    public record Wallet(long Id, string Name, double Balance);
+    /// <param name="Kind">空字串為一般錢包;<see cref="Database.CreditCard"/> 為信用卡(餘額為負代表欠款)</param>
+    /// <param name="ClosingDay">信用卡每月結帳日(1–31,月份天數不夠時為月底)</param>
+    /// <param name="DueDay">信用卡每月繳款日</param>
+    /// <param name="PayWalletId">繳卡費預設從哪個錢包付</param>
+    public record Wallet(long Id, string Name, double Balance, string Kind = "", double Limit = 0,
+                         int ClosingDay = 0, int DueDay = 0, long? PayWalletId = null)
+    {
+        public bool IsCard => Kind == Database.CreditCard;
+        public double Owed => Math.Max(-Balance, 0);
+    }
+
+    /// <summary>
+    /// 信用卡帳單。結帳日(含)以前刷的算本期,之後刷的是未出帳;
+    /// 結帳後從其他錢包轉進來的錢(繳卡費)先抵本期帳單。
+    /// </summary>
+    /// <param name="Statement">結帳當天的欠款</param>
+    /// <param name="Remaining">本期還要繳的金額</param>
+    /// <param name="Owed">目前總欠款</param>
+    public record CardBill(DateTime Closing, DateTime Due, double Statement, double Remaining, double Owed, double Limit)
+    {
+        public double Paid => Math.Max(Statement - Remaining, 0);
+        public double Unbilled => Math.Max(Owed - Remaining, 0);
+        public int DaysLeft => (int)(Due - DateTime.Today).TotalDays;
+        public bool Settled => Remaining <= 0.0001;
+        public bool Late => !Settled && DaysLeft < 0;
+
+        public static DateTime DayIn(int year, int month, int day) =>
+            new(year, month, Math.Clamp(day, 1, DateTime.DaysInMonth(year, month)));
+
+        /// <summary>today 當天或之前最近的一次結帳日。</summary>
+        public static DateTime LastClosing(int closingDay, DateTime today)
+        {
+            var c = DayIn(today.Year, today.Month, closingDay);
+            if (c <= today) return c;
+            var prev = today.AddMonths(-1);
+            return DayIn(prev.Year, prev.Month, closingDay);
+        }
+
+        /// <summary>結帳日之後的第一個繳款日(繳款日比結帳日小就是下個月)。</summary>
+        public static DateTime DueAfter(DateTime closing, int dueDay)
+        {
+            var d = DayIn(closing.Year, closing.Month, dueDay);
+            if (d > closing) return d;
+            var next = closing.AddMonths(1);
+            return DayIn(next.Year, next.Month, dueDay);
+        }
+
+        /// <summary>側欄錢包名稱下方那一行。</summary>
+        public string Short => Owed <= 0.0001 ? "沒有欠款"
+            : Late ? $"逾期未繳 {Remaining:N0}"
+            : Settled ? "本期已繳清"
+            : $"應繳 {Remaining:N0} · {Due:M/d} 前";
+
+        /// <summary>收支記錄上方大卡片的說明行。</summary>
+        public string Detail => Owed <= 0.0001 ? "目前沒有欠款"
+            : Late ? $"已過繳款日 {-DaysLeft} 天({Due:M/d})"
+            : Settled ? $"本期已繳清 · 未出帳 {Unbilled:N0}"
+            : $"{Due:M/d} 前繳(剩 {DaysLeft} 天)" + (Unbilled > 0.0001 ? $" · 未出帳 {Unbilled:N0}" : "");
+
+        public string Tip
+        {
+            get
+            {
+                var lines = new List<string>
+                {
+                    $"本期帳單 {Statement:N0}({Closing:M/d} 結帳)",
+                    $"已繳 {Paid:N0},還要繳 {Remaining:N0},繳款日 {Due:M/d}",
+                    $"未出帳 {Unbilled:N0},目前總欠款 {Owed:N0}",
+                };
+                if (Limit > 0) lines.Add($"信用額度 {Limit:N0},可用 {Limit - Owed:N0}");
+                return string.Join("\n", lines);
+            }
+        }
+    }
 
     public record RecordRow(long Id, string Date, string Wallet, string Type,
                             string Category, double Amount, string Note)
     {
         public bool IsIncome => Type == Database.Income;
-        public string AmountText => (IsIncome ? "+" : "−") + Amount.ToString("N0");
+        public virtual bool IsTransfer => false;
+        public virtual string AmountText => (IsIncome ? "+" : "−") + Amount.ToString("N0");
+    }
+
+    /// <summary>錢包之間的轉帳(目前只有繳卡費),和收支記錄列在同一個清單,但不算收入或支出。</summary>
+    /// <param name="Sign">只看某個錢包時,轉出為「−」、轉入為「+」;看全部錢包時不加正負號</param>
+    public record TransferRow(long Id, string Date, long FromId, string From, long ToId, string To,
+                              double Amount, string Note, string Sign)
+        : RecordRow(Id, Date, $"{From} → {To}", Database.Transfer, Database.CardPayment, Amount, Note)
+    {
+        public override bool IsTransfer => true;
+        public override string AmountText => Sign + Amount.ToString("N0");
     }
 
     public record DebtRow(long Id, string Person, string Direction, double Amount, double Paid,
@@ -105,6 +189,8 @@ namespace ZZZ
         public const string Income = "收入", Expense = "支出";
         public const string IOwe = "我欠別人", TheyOwe = "別人欠我";
         public const string Yearly = "每年"; // goals.repeat
+        public const string CreditCard = "信用卡"; // wallets.kind
+        public const string Transfer = "轉帳", CardPayment = "繳卡費"; // 清單中轉帳列的類型、分類
 
         static readonly string[] DefaultExpense = ["餐飲", "交通", "購物", "居住", "娛樂", "醫療", "其他"];
         static readonly string[] DefaultIncome = ["薪資", "獎金", "投資", "其他"];
@@ -189,6 +275,16 @@ namespace ZZZ
                 Exec("ALTER TABLE goals ADD COLUMN repeat TEXT DEFAULT ''");
             if (!Columns("goals").Contains("wallet_id")) // 目標的錢存在哪個錢包(NULL 為不指定)
                 Exec("ALTER TABLE goals ADD COLUMN wallet_id INTEGER");
+            if (!Columns("wallets").Contains("kind")) // 信用卡
+            {
+                Exec("ALTER TABLE wallets ADD COLUMN kind TEXT DEFAULT ''");
+                Exec("ALTER TABLE wallets ADD COLUMN credit_limit REAL DEFAULT 0");
+                Exec("ALTER TABLE wallets ADD COLUMN closing_day INTEGER DEFAULT 0");
+                Exec("ALTER TABLE wallets ADD COLUMN due_day INTEGER DEFAULT 0");
+                Exec("ALTER TABLE wallets ADD COLUMN pay_wallet_id INTEGER");
+            }
+            Exec("CREATE TABLE IF NOT EXISTS transfers(id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT," +
+                 "from_wallet INTEGER, to_wallet INTEGER, amount REAL, note TEXT)");
             if (Convert.ToInt64(Scalar("PRAGMA user_version")) < 1) ConvertLinkedGoals();
             EnsureDefaults();
         }
@@ -239,10 +335,29 @@ namespace ZZZ
             Exec("DELETE FROM categories WHERE type=@p0 AND name=@p1", type, name);
 
         // ---------- 錢包 ----------
+        // 錢包餘額 = 初始金額 + 收入 − 支出 + 轉入 − 轉出;until 有值時只算到那一天(含)
+        static string BalanceSql(string until) =>
+            "w.initial + COALESCE((SELECT SUM(CASE type WHEN '收入' THEN amount ELSE -amount END) FROM records " +
+            $"WHERE wallet_id = w.id{until}), 0) + COALESCE((SELECT SUM(amount) FROM transfers WHERE to_wallet = w.id{until}), 0) " +
+            $"- COALESCE((SELECT SUM(amount) FROM transfers WHERE from_wallet = w.id{until}), 0)";
+
         public List<Wallet> Wallets() => Query(
-            "SELECT w.id, w.name, w.initial + COALESCE(SUM(CASE r.type WHEN '收入' THEN r.amount ELSE -r.amount END), 0) " +
-            "FROM wallets w LEFT JOIN records r ON r.wallet_id = w.id GROUP BY w.id ORDER BY w.sort, w.id",
-            r => new Wallet(r.GetInt64(0), Str(r, 1), Num(r, 2)));
+            $"SELECT w.id, w.name, {BalanceSql("")}, w.kind, w.credit_limit, w.closing_day, w.due_day, w.pay_wallet_id " +
+            "FROM wallets w ORDER BY w.sort, w.id",
+            r => new Wallet(r.GetInt64(0), Str(r, 1), Num(r, 2), Str(r, 3), Num(r, 4), (int)Num(r, 5), (int)Num(r, 6),
+                            r.IsDBNull(7) ? null : r.GetInt64(7)));
+
+        /// <summary>信用卡目前這一期的帳單。</summary>
+        public CardBill Bill(Wallet card)
+        {
+            var closing = CardBill.LastClosing(card.ClosingDay, DateTime.Today);
+            var c = closing.ToString("yyyy-MM-dd");
+            var balance = Convert.ToDouble(Scalar($"SELECT {BalanceSql(" AND date <= @p1")} FROM wallets w WHERE w.id = @p0", card.Id, c));
+            var paid = Convert.ToDouble(Scalar("SELECT COALESCE(SUM(amount), 0) FROM transfers WHERE to_wallet = @p0 AND date > @p1", card.Id, c));
+            double statement = Math.Max(-balance, 0);
+            return new CardBill(closing, CardBill.DueAfter(closing, card.DueDay), statement,
+                                Math.Clamp(statement - paid, 0, card.Owed), card.Owed, card.Limit);
+        }
 
         /// <returns>新錢包 id;名稱重複時回傳 null</returns>
         public long? AddWallet(string name, double initial)
@@ -270,17 +385,84 @@ namespace ZZZ
             catch (SqliteException) { return false; }
         }
 
+        /// <returns>新信用卡的 id;名稱重複時回傳 null</returns>
+        /// <param name="owed">目前還沒繳的金額(存成負的初始餘額)</param>
+        public long? AddCard(string name, double owed, double limit, int closingDay, int dueDay, long payWalletId)
+        {
+            try
+            {
+                Exec("INSERT INTO wallets(name, initial, sort, kind, credit_limit, closing_day, due_day, pay_wallet_id) " +
+                     $"VALUES(@p0,@p1,{NextWalletSort},@p2,@p3,@p4,@p5,@p6)", name, -owed, CreditCard, limit, closingDay, dueDay, payWalletId);
+                return (long)Scalar("SELECT last_insert_rowid()")!;
+            }
+            catch (SqliteException) { return null; }
+        }
+
+        /// <summary>改名稱與信用卡設定;kind 為空字串時是一般錢包。名稱重複時回傳 false。</summary>
+        public bool UpdateWallet(long id, string name, string kind, double limit, int closingDay, int dueDay, long? payWalletId)
+        {
+            try
+            {
+                Exec("UPDATE wallets SET name=@p0, kind=@p1, credit_limit=@p2, closing_day=@p3, due_day=@p4, pay_wallet_id=@p5 WHERE id=@p6",
+                     name, kind, limit, closingDay, dueDay, payWalletId, id);
+                return true;
+            }
+            catch (SqliteException) { return false; }
+        }
+
         public int WalletCount() => Convert.ToInt32(Scalar("SELECT COUNT(*) FROM wallets"));
 
         public int WalletRecordCount(long id) =>
             Convert.ToInt32(Scalar("SELECT COUNT(*) FROM records WHERE wallet_id=@p0", id));
 
+        public int WalletTransferCount(long id) =>
+            Convert.ToInt32(Scalar("SELECT COUNT(*) FROM transfers WHERE from_wallet=@p0 OR to_wallet=@p0", id));
+
+        /// <summary>
+        /// 刪除錢包與其中的記錄。和其他錢包之間的轉帳改成對方錢包的收支(分類「其他」),
+        /// 讓對方的餘額不變:例如刪掉信用卡,從銀行繳過的卡費會變成銀行的支出。
+        /// </summary>
         public void DeleteWallet(long id) => InTransaction(() =>
         {
+            var names = Query("SELECT id, name FROM wallets", r => (Id: r.GetInt64(0), Name: Str(r, 1))).ToDictionary(x => x.Id, x => x.Name);
+            var transfers = Query("SELECT date, from_wallet, to_wallet, amount, note FROM transfers WHERE from_wallet=@p0 OR to_wallet=@p0",
+                r => (Date: Str(r, 0), From: r.GetInt64(1), To: r.GetInt64(2), Amount: Num(r, 3), Note: Str(r, 4)), id);
+            foreach (var t in transfers)
+            {
+                bool outgoing = t.To == id; // 對方把錢轉進被刪的錢包 → 對方的支出
+                long other = outgoing ? t.From : t.To;
+                if (other == id || !names.ContainsKey(other)) continue;
+                var note = outgoing ? $"繳「{names[id]}」卡費" : $"由「{names[id]}」轉入";
+                AddRecord(t.Date, outgoing ? Expense : Income, "其他", t.Amount, t.Note != "" ? $"{note} · {t.Note}" : note, other);
+            }
+            Exec("DELETE FROM transfers WHERE from_wallet=@p0 OR to_wallet=@p0", id);
             Exec("DELETE FROM records WHERE wallet_id=@p0", id);
             Exec("UPDATE goals SET wallet_id=NULL WHERE wallet_id=@p0", id); // 連結的目標改回手動存入
+            Exec("UPDATE wallets SET pay_wallet_id=NULL WHERE pay_wallet_id=@p0", id);
             Exec("DELETE FROM wallets WHERE id=@p0", id);
         });
+
+        // ---------- 轉帳(繳卡費) ----------
+        /// <param name="walletId">只列出這個錢包轉出或轉入的;null 為全部</param>
+        public List<TransferRow> Transfers(string month, long? walletId) => Query(
+            "SELECT t.id, t.date, t.from_wallet, f.name, t.to_wallet, w.name, t.amount, t.note FROM transfers t " +
+            "LEFT JOIN wallets f ON f.id = t.from_wallet LEFT JOIN wallets w ON w.id = t.to_wallet " +
+            "WHERE t.date LIKE @p0" + (walletId != null ? " AND (t.from_wallet = @p1 OR t.to_wallet = @p1)" : "") +
+            " ORDER BY t.date DESC, t.id DESC",
+            r =>
+            {
+                long from = r.GetInt64(2), to = r.GetInt64(4);
+                var sign = walletId == null ? "" : walletId == from ? "−" : "+";
+                return new TransferRow(r.GetInt64(0), Str(r, 1), from, Str(r, 3), to, Str(r, 5), Num(r, 6), Str(r, 7), sign);
+            },
+            walletId != null ? new object?[] { month + "%", walletId } : [month + "%"]);
+
+        public void AddTransfer(string date, long from, long to, double amount, string note) =>
+            Exec("INSERT INTO transfers(date, from_wallet, to_wallet, amount, note) VALUES(@p0,@p1,@p2,@p3,@p4)",
+                 date, from, to, amount, note);
+
+        public void UpdateTransfer(long id, string date, long from, double amount, string note) =>
+            Exec("UPDATE transfers SET date=@p0, from_wallet=@p1, amount=@p2, note=@p3 WHERE id=@p4", date, from, amount, note, id);
 
         // ---------- 收支記錄 ----------
         public List<RecordRow> Records(string month, long? walletId)
@@ -313,8 +495,12 @@ namespace ZZZ
             Exec("UPDATE records SET date=@p0, type=@p1, category=@p2, amount=@p3, note=@p4, wallet_id=@p5 WHERE id=@p6",
                  date, type, category, amount, note, walletId, id);
 
-        public void DeleteRecords(IEnumerable<long> ids) =>
-            InTransaction(() => { foreach (var id in ids) Exec("DELETE FROM records WHERE id=@p0", id); });
+        /// <param name="transferIds">一起刪除的轉帳(清單裡的繳卡費列)</param>
+        public void DeleteRecords(IEnumerable<long> ids, IEnumerable<long>? transferIds = null) => InTransaction(() =>
+        {
+            foreach (var id in ids) Exec("DELETE FROM records WHERE id=@p0", id);
+            foreach (var id in transferIds ?? []) Exec("DELETE FROM transfers WHERE id=@p0", id);
+        });
 
         // ---------- 欠款 ----------
         public List<DebtRow> Debts() => Query(
@@ -397,7 +583,7 @@ namespace ZZZ
         public void DeleteDeposit(long id) => Exec("DELETE FROM goal_deposits WHERE id=@p0", id);
 
         // ---------- 匯出 / 匯入 ----------
-        public static readonly string[] Tables = ["wallets", "categories", "records", "debts", "goals", "goal_deposits"];
+        public static readonly string[] Tables = ["wallets", "categories", "records", "transfers", "debts", "goals", "goal_deposits"];
 
         /// <summary>讀出整張表(含 rowid 順序),供完整備份使用。</summary>
         public List<Dictionary<string, object?>> Dump(string table)

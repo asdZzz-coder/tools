@@ -16,18 +16,23 @@ namespace ZZZ
 {
     /// <param name="Goal">放在這個錢包的存錢目標名稱(多個以「、」分隔,沒有則為空字串)</param>
     /// <param name="Allocated">已分配給這些目標的金額</param>
-    public record WalletItem(long? Id, string Name, double Balance, string Goal = "", double Allocated = 0)
+    /// <param name="Bill">信用卡的本期帳單;一般錢包為 null</param>
+    public record WalletItem(long? Id, string Name, double Balance, string Goal = "", double Allocated = 0, CardBill? Bill = null)
     {
         public bool IsAll => Id == null;
         public string Icon => Id == null ? "" : Goal != "" ? "" : "";
-        public string? GoalTip => Goal != "" ? $"存錢目標:{Goal}\n已分配給目標 {Allocated:N0},未分配 {Free:N0}" : null;
+        public string? Tip => Bill?.Tip ?? (Goal != "" ? $"存錢目標:{Goal}\n已分配給目標 {Allocated:N0},未分配 {Free:N0}" : null);
         public string BalanceText => Balance.ToString("N0");
         public bool Negative => Balance < 0;
         public bool HasGoals => Goal != "";
         public double Free => Balance - Allocated;
         /// <summary>分配給目標的錢超過錢包餘額(例如之後又花掉了)。</summary>
-        public bool OverAllocated => Free < -0.0001;
+        public bool OverAllocated => HasGoals && Free < -0.0001;
         public string AllocText => OverAllocated ? $"分配超出 {-Free:N0}" : $"未分配 {Free:N0}";
+        /// <summary>名稱下方那一行:信用卡的應繳金額,或放了存錢目標的錢包還沒分配的錢。</summary>
+        public string SubText => Bill?.Short ?? (HasGoals ? AllocText : "");
+        public bool HasSub => SubText != "";
+        public bool Warn => Bill?.Late == true || OverAllocated;
     }
 
     public partial class MainWindow : Window
@@ -141,14 +146,17 @@ namespace ZZZ
             var items = new ObservableCollection<WalletItem> { new(null, "全部錢包", wallets.Sum(w => w.Balance)) };
             var goals = db.Goals().Where(g => g.Linked).GroupBy(g => g.WalletId!.Value).ToDictionary(x => x.Key);
             foreach (var w in wallets)
+            {
+                var bill = w.IsCard ? db.Bill(w) : null;
                 items.Add(goals.TryGetValue(w.Id, out var gs)
-                    ? new WalletItem(w.Id, w.Name, w.Balance, string.Join("、", gs.Select(g => g.Name)), gs.Sum(g => g.Saved))
-                    : new WalletItem(w.Id, w.Name, w.Balance));
+                    ? new WalletItem(w.Id, w.Name, w.Balance, string.Join("、", gs.Select(g => g.Name)), gs.Sum(g => g.Saved), bill)
+                    : new WalletItem(w.Id, w.Name, w.Balance, Bill: bill));
+            }
             loadingWallets = true;
             WalletList.ItemsSource = items;
             WalletList.SelectedItem = items.First(i => i.Id == selWallet);
             loadingWallets = false;
-            RenameWalletBtn.IsEnabled = DeleteWalletBtn.IsEnabled = selWallet != null;
+            EditWalletBtn.IsEnabled = DeleteWalletBtn.IsEnabled = selWallet != null;
             RefreshGoals(); // 目標清單與側欄的已分配金額一起更新
         }
 
@@ -156,7 +164,7 @@ namespace ZZZ
         {
             if (loadingWallets || WalletList.SelectedItem is not WalletItem item) return;
             selWallet = item.Id;
-            RenameWalletBtn.IsEnabled = DeleteWalletBtn.IsEnabled = selWallet != null;
+            EditWalletBtn.IsEnabled = DeleteWalletBtn.IsEnabled = selWallet != null;
             if (selWallet != null && RecWallet.ItemsSource is List<Wallet> ws)
                 RecWallet.SelectedItem = ws.FirstOrDefault(w => w.Id == selWallet);
             RefreshRecords();
@@ -215,8 +223,15 @@ namespace ZZZ
 
         void AddWallet_Click(object sender, RoutedEventArgs e)
         {
+            var kind = DialogWindow.Choose(this, "新增錢包", "要新增哪一種?",
+            [
+                ("", "錢包 / 戶頭","現金、銀行帳戶、電子支付,記錄裡面有多少錢。"),
+                ("", "信用卡", "刷卡時記在卡上,結帳後從連結的錢包繳卡費。會算出每期帳單和繳款日。"),
+            ]);
+            if (kind == null) return;
+            if (kind == 1) { AddCard(); return; }
             var v = DialogWindow.Prompt(this, "新增錢包", "建立一個新的錢包或銀行戶頭。",
-                [new Field("名稱", "", "例如:現金、郵局、信用卡"), new Field("目前餘額", "0", "可為 0 或負數")],
+                [new Field("名稱", "", "例如:現金、郵局、LINE Pay"), new Field("目前餘額", "0", "可為 0 或負數")],
                 vals =>
                 {
                     if (vals[0] == "") return "請輸入錢包名稱";
@@ -231,24 +246,165 @@ namespace ZZZ
             RefreshAll();
         }
 
-        void RenameWallet_Click(object sender, RoutedEventArgs e)
+        // ---------- 信用卡 ----------
+        const string NormalWallet = "一般錢包 / 戶頭";
+
+        static int Day(string s) => int.TryParse(s, out var d) && d is >= 1 and <= 31 ? d : 0;
+        static double AmountOrZero(string s) => DialogWindow.TryParseAmount(s == "" ? "0" : s, out var a) ? a : 0;
+
+        /// <summary>
+        /// 信用卡設定欄位:名稱、結帳日、繳款日、繳卡費的錢包、額度(前 5 欄,呼叫端可以再加欄位)。
+        /// payers 是可以用來繳卡費的一般錢包。
+        /// </summary>
+        static (List<Field> Fields, Func<string[], string?> Validate) CardForm(Wallet? w, string name, List<Wallet> payers)
         {
-            if (WalletList.SelectedItem is not WalletItem { Id: long id } item) return;
-            var v = DialogWindow.Prompt(this, "重新命名", "", [new Field("新的名稱", item.Name)],
-                vals => vals[0] == "" ? "名稱不可空白" : null);
-            if (v == null || v[0] == item.Name) return;
+            var fields = new List<Field>
+            {
+                new("卡片名稱", name, "例如:玉山卡、國泰 CUBE 卡"),
+                new("每月結帳日", w?.ClosingDay > 0 ? w.ClosingDay.ToString() : "", "1–31,帳單上的結帳日,例如 5"),
+                new("每月繳款日", w?.DueDay > 0 ? w.DueDay.ToString() : "", "1–31,繳款截止日,例如 20"),
+                new("繳卡費的錢包", (payers.FirstOrDefault(p => p.Id == w?.PayWalletId) ?? payers[0]).Name,
+                    Options: payers.Select(p => p.Name).ToArray()),
+                new("信用額度(可空白)", w?.Limit > 0 ? w.Limit.ToString("0.##") : "", "例如:80000"),
+            };
+            return (fields, v =>
+            {
+                if (v[0] == "") return "請輸入卡片名稱";
+                if (Day(v[1]) == 0) return "結帳日請填 1 到 31 的數字";
+                if (Day(v[2]) == 0) return "繳款日請填 1 到 31 的數字";
+                if (v[4] != "" && (!DialogWindow.TryParseAmount(v[4], out var limit) || limit < 0)) return "信用額度需為數字,或留空";
+                return null;
+            });
+        }
+
+        void AddCard()
+        {
+            var payers = db.Wallets().Where(w => !w.IsCard).ToList();
+            if (payers.Count == 0)
+            {
+                DialogWindow.Info(this, "新增信用卡", "請先新增一個一般錢包(例如銀行帳戶),信用卡的帳單要從它繳。");
+                return;
+            }
+            var (fields, validate) = CardForm(null, "", payers);
+            fields.Add(new Field("目前還沒繳的金額", "0", "已經刷了還沒繳的,沒有就填 0"));
+            var v = DialogWindow.Prompt(this, "新增信用卡", "刷卡時把錢包選這張卡;結帳後按「繳卡費」,從連結的錢包付款。",
+                fields.ToArray(), vals => validate(vals) ??
+                    (DialogWindow.TryParseAmount(vals[5] == "" ? "0" : vals[5], out var owed) && owed >= 0 ? null : "還沒繳的金額需為 0 或正數"),
+                "建立");
+            if (v == null) return;
+            var id = db.AddCard(v[0], AmountOrZero(v[5]), AmountOrZero(v[4]), Day(v[1]), Day(v[2]), payers.First(p => p.Name == v[3]).Id);
+            if (id == null) { DialogWindow.Info(this, "提示", "已有相同名稱的錢包"); return; }
+            selWallet = id;
+            RefreshAll();
+        }
+
+        void EditWallet_Click(object sender, RoutedEventArgs e)
+        {
+            if (WalletList.SelectedItem is not WalletItem { Id: long id }) return;
+            var wallets = db.Wallets();
+            var w = wallets.First(x => x.Id == id);
+            var payers = wallets.Where(x => !x.IsCard && x.Id != id).ToList();
+            if (w.IsCard) { EditCard(w, w.Name, payers, converting: false); return; }
+            var v = DialogWindow.Prompt(this, "編輯錢包", "",
+                [new Field("名稱", w.Name), new Field("類型", NormalWallet, Options: [NormalWallet, Database.CreditCard])],
+                vals =>
+                {
+                    if (vals[0] == "") return "名稱不可空白";
+                    if (vals[1] != Database.CreditCard) return null;
+                    if (db.Goals().Any(g => g.WalletId == id)) return "這個錢包放了存錢目標,不能改成信用卡";
+                    if (wallets.Any(c => c.IsCard && c.PayWalletId == id)) return "有信用卡從這個錢包繳卡費,不能改成信用卡";
+                    if (payers.Count == 0) return "要先有另一個一般錢包,信用卡才能從它繳卡費";
+                    return null;
+                });
+            if (v == null) return;
+            if (v[1] == Database.CreditCard) { EditCard(w, v[0], payers, converting: true); return; }
+            if (v[0] == w.Name) return;
             if (!db.RenameWallet(id, v[0])) { DialogWindow.Info(this, "提示", "已有相同名稱的錢包"); return; }
             RefreshAll();
+        }
+
+        /// <param name="converting">把一般錢包改成信用卡(目前餘額就當作欠款)</param>
+        void EditCard(Wallet w, string name, List<Wallet> payers, bool converting)
+        {
+            var (fields, validate) = CardForm(converting ? null : w, name, payers);
+            if (!converting) fields.Add(new Field("類型", Database.CreditCard, Options: [Database.CreditCard, NormalWallet]));
+            var v = DialogWindow.Prompt(this, converting ? "改成信用卡" : "編輯信用卡",
+                converting ? $"「{w.Name}」目前的餘額 {Money(w.Balance)} 會當作這張卡的欠款(負數代表欠款)。" : "",
+                fields.ToArray(), vals => !converting && vals[5] == NormalWallet ? (vals[0] == "" ? "請輸入名稱" : null) : validate(vals), "儲存");
+            if (v == null) return;
+            bool ok = !converting && v[5] == NormalWallet
+                ? db.UpdateWallet(w.Id, v[0], "", 0, 0, 0, null)
+                : db.UpdateWallet(w.Id, v[0], Database.CreditCard, AmountOrZero(v[4]), Day(v[1]), Day(v[2]), payers.First(p => p.Name == v[3]).Id);
+            if (!ok) { DialogWindow.Info(this, "提示", "已有相同名稱的錢包"); return; }
+            RefreshAll();
+        }
+
+        /// <summary>繳卡費:從付款錢包轉一筆錢到信用卡(不算支出,刷卡時已經記過了)。</summary>
+        void PayCard_Click(object sender, RoutedEventArgs e)
+        {
+            var wallets = db.Wallets();
+            if (wallets.FirstOrDefault(w => w.Id == selWallet && w.IsCard) is not Wallet card) return;
+            var payers = wallets.Where(w => !w.IsCard).ToList();
+            if (payers.Count == 0) { DialogWindow.Info(this, "繳卡費", "請先新增一個一般錢包(例如銀行帳戶)來繳卡費。"); return; }
+            if (card.Owed <= 0.0001) { DialogWindow.Info(this, "繳卡費", $"「{card.Name}」目前沒有欠款。"); return; }
+            var bill = db.Bill(card);
+            var msg = (bill.Settled ? $"本期帳單已繳清,目前未出帳 {Money(bill.Unbilled)}。"
+                                    : $"本期帳單({bill.Closing:M/d} 結帳)還要繳 {Money(bill.Remaining)},繳款日 {bill.Due:M/d}。")
+                      + "\n繳卡費是把錢從付款的錢包轉到信用卡,不會重複算成支出。";
+            var v = DialogWindow.Prompt(this, $"繳卡費:{card.Name}", msg,
+            [
+                new Field("從哪個錢包付", (payers.FirstOrDefault(p => p.Id == card.PayWalletId) ?? payers[0]).Name,
+                          Options: payers.Select(p => p.Name).ToArray()),
+                new Field("金額", (bill.Settled ? card.Owed : bill.Remaining).ToString("0.##")),
+                new Field("日期", DateTime.Today.ToString("yyyy-MM-dd"), "點日曆選擇,或直接輸入 YYYY-MM-DD", IsDate: true),
+                new Field("備註(可空白)", ""),
+            ], vals =>
+            {
+                if (!DialogWindow.TryParseAmount(vals[1], out var a) || a <= 0) return "金額需大於 0";
+                if (a > card.Owed + 0.0001) return $"超過目前的欠款 {Money(card.Owed)}";
+                if (!DateTime.TryParse(vals[2], out _)) return "日期格式為 YYYY-MM-DD";
+                return null;
+            }, "繳費");
+            if (v == null) return;
+            DialogWindow.TryParseAmount(v[1], out var amt);
+            db.AddTransfer(NormalizeDate(v[2]), payers.First(p => p.Name == v[0]).Id, card.Id, amt, v[3]);
+            RefreshSidebar();
+            RefreshRecords();
+        }
+
+        void EditTransfer(TransferRow t)
+        {
+            var payers = db.Wallets().Where(w => !w.IsCard || w.Id == t.FromId).ToList();
+            var v = DialogWindow.Prompt(this, "編輯繳卡費", $"繳「{t.To}」的卡費。",
+            [
+                new Field("日期", t.Date, "點日曆選擇,或直接輸入 YYYY-MM-DD", IsDate: true),
+                new Field("從哪個錢包付", t.From, Options: payers.Select(w => w.Name).ToArray()),
+                new Field("金額", t.Amount.ToString("0.##")),
+                new Field("備註(可空白)", t.Note),
+            ], vals =>
+            {
+                if (!DateTime.TryParse(vals[0], out _)) return "日期格式為 YYYY-MM-DD";
+                if (!DialogWindow.TryParseAmount(vals[2], out var a) || a <= 0) return "金額需大於 0";
+                return null;
+            }, "儲存");
+            if (v == null) return;
+            DialogWindow.TryParseAmount(v[2], out var amt);
+            db.UpdateTransfer(t.Id, NormalizeDate(v[0]), payers.First(w => w.Name == v[1]).Id, amt, v[3]);
+            RefreshSidebar();
+            RefreshRecords();
+            RecordGrid.SelectedItem = ((List<RecordRow>)RecordGrid.ItemsSource).FirstOrDefault(x => x.IsTransfer && x.Id == t.Id);
         }
 
         void DeleteWallet_Click(object sender, RoutedEventArgs e)
         {
             if (WalletList.SelectedItem is not WalletItem { Id: long id } item) return;
             if (db.WalletCount() <= 1) { DialogWindow.Info(this, "提示", "至少要保留一個錢包"); return; }
-            int n = db.WalletRecordCount(id);
+            int n = db.WalletRecordCount(id), t = db.WalletTransferCount(id);
             if (!DialogWindow.Confirm(this, "刪除錢包",
                     $"刪除「{item.Name}」,並一併刪除其中 {n} 筆記錄?\n" +
-                    (item.Goal != "" ? $"存錢目標「{item.Goal}」會改成不指定錢包(已存金額不變)。\n" : "") + "此動作無法復原。", "刪除", danger: true))
+                    (item.Goal != "" ? $"存錢目標「{item.Goal}」會改成不指定錢包(已存金額不變)。\n" : "") +
+                    (t > 0 ? $"和其他錢包之間的 {t} 筆繳卡費,會改記成對方錢包的收支(對方餘額不變)。\n" : "") +
+                    "此動作無法復原。", "刪除", danger: true))
                 return;
             db.DeleteWallet(id);
             selWallet = null;
@@ -283,17 +439,30 @@ namespace ZZZ
         void RefreshRecords()
         {
             var rows = FilteredRecords();
-            RecordGrid.ItemsSource = rows;
+            // 繳卡費(轉帳)也列在清單裡,但不算進收入、支出
+            var shown = catFilter == null
+                ? rows.Concat(db.Transfers(Month, selWallet)).OrderByDescending(r => r.Date, StringComparer.Ordinal).ToList()
+                : rows;
+            RecordGrid.ItemsSource = shown;
             CatChip.Visibility = catFilter == null ? Visibility.Collapsed : Visibility.Visible;
             CatChipText.Text = $"{Database.Expense} · {catFilter}";
             double inc = rows.Where(r => r.IsIncome).Sum(r => r.Amount);
             double exp = rows.Where(r => !r.IsIncome).Sum(r => r.Amount);
-            double bal = db.Wallets().Where(w => selWallet == null || w.Id == selWallet).Sum(w => w.Balance);
+            var wallets = db.Wallets();
+            double bal = wallets.Where(w => selWallet == null || w.Id == selWallet).Sum(w => w.Balance);
 
             var period = Month == "" ? "全部期間" : Month;
-            BalanceText.Text = Money(bal);
-            BalanceText.Foreground = bal >= 0 ? Brushes.White : (Brush)FindResource("ExpBrush");
-            BalanceSub.Text = (WalletList.SelectedItem as WalletItem)?.Name ?? "全部錢包";
+            // 選到信用卡時,大卡片改成顯示本期應繳與繳款日
+            var card = wallets.FirstOrDefault(w => w.Id == selWallet && w.IsCard);
+            var bill = card != null ? db.Bill(card) : null;
+            HeroLabel.Text = card != null ? $"{card.Name} · 本期應繳" : "目前總餘額";
+            BalanceText.Text = Money(bill?.Remaining ?? bal);
+            BalanceText.Foreground = bill?.Late == true ? (Brush)FindResource("WarnBrush")
+                                   : bill != null || bal >= 0 ? Brushes.White : (Brush)FindResource("ExpBrush");
+            BalanceSub.Text = bill?.Detail ?? (WalletList.SelectedItem as WalletItem)?.Name ?? "全部錢包";
+            HeroCard.ToolTip = bill?.Tip;
+            PayCardBtn.Visibility = card != null ? Visibility.Visible : Visibility.Collapsed;
+            HeroIcon.Visibility = card != null ? Visibility.Collapsed : Visibility.Visible;
             IncomeText.Text = Money(inc);
             ExpenseText.Text = Money(exp);
             NetText.Text = (inc - exp > 0 ? "+" : "") + Money(inc - exp);
@@ -301,8 +470,8 @@ namespace ZZZ
             IncomeSub.Text = $"{period} · {rows.Count(r => r.IsIncome)} 筆";
             ExpenseSub.Text = $"{period} · {rows.Count(r => !r.IsIncome)} 筆";
             NetSub.Text = period;
-            RecCount.Text = $"共 {rows.Count} 筆";
-            RecEmpty.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            RecCount.Text = $"共 {shown.Count} 筆";
+            RecEmpty.Visibility = shown.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             RefreshStats();
         }
 
@@ -401,6 +570,7 @@ namespace ZZZ
                 DialogWindow.Info(this, "提示", "請先在清單中選取一筆記錄(或直接雙擊那一筆)。");
                 return;
             }
+            if (r is TransferRow t) { EditTransfer(t); return; }
             var wallets = db.Wallets();
             var kinds = new List<string>();
             foreach (var type in new[] { Database.Expense, Database.Income })
@@ -427,7 +597,7 @@ namespace ZZZ
             db.UpdateRecord(r.Id, NormalizeDate(v[0]), parts[0], parts[1], amt, v[4], wallet.Id);
             RefreshSidebar();
             RefreshRecords();
-            RecordGrid.SelectedItem = ((List<RecordRow>)RecordGrid.ItemsSource).FirstOrDefault(x => x.Id == r.Id);
+            RecordGrid.SelectedItem = ((List<RecordRow>)RecordGrid.ItemsSource).FirstOrDefault(x => !x.IsTransfer && x.Id == r.Id);
         }
 
         void DeleteRecords_Click(object sender, RoutedEventArgs e) => DeleteRecords();
@@ -442,7 +612,7 @@ namespace ZZZ
             var sel = RecordGrid.SelectedItems.Cast<RecordRow>().ToList();
             if (sel.Count == 0) { DialogWindow.Info(this, "提示", "請先在清單中選取要刪除的記錄(可按住 Ctrl 或 Shift 多選)。"); return; }
             if (!DialogWindow.Confirm(this, "刪除記錄", $"確定刪除 {sel.Count} 筆記錄?", "刪除", danger: true)) return;
-            db.DeleteRecords(sel.Select(r => r.Id));
+            db.DeleteRecords(sel.Where(r => !r.IsTransfer).Select(r => r.Id), sel.Where(r => r.IsTransfer).Select(r => r.Id));
             RefreshSidebar();
             RefreshRecords();
         }
@@ -746,7 +916,7 @@ namespace ZZZ
             var wallets = db.Wallets();
             long? WalletOf(string name) => wallets.FirstOrDefault(w => w.Name == name)?.Id;
             var walletField = new Field("錢放在哪個錢包(存入時從這個錢包分配)", g?.Linked == true ? g.WalletName : NoWallet,
-                                        Options: [NoWallet, .. wallets.Select(w => w.Name)]);
+                                        Options: [NoWallet, .. wallets.Where(w => !w.IsCard).Select(w => w.Name)]);
             Field[] fields = yearly
             ? [
                 new Field("費用名稱", g?.Name ?? "", "例如:汽車牌照稅、燃料稅、汽車保險"),
