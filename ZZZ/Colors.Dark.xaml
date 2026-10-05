@@ -1,0 +1,32 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- 深色配色。鍵值與 Colors.Light.xaml 一一對應:「墨色」(強調色)在深色模式下反過來變成淺色 -->
+    <SolidColorBrush x:Key="BgBrush" Color="#111317"/>
+    <SolidColorBrush x:Key="SurfaceBrush" Color="#1B1E24"/>
+    <SolidColorBrush x:Key="InkBrush" Color="#E5E7EB"/>
+    <SolidColorBrush x:Key="InkHoverBrush" Color="#C9CDD4"/>
+    <SolidColorBrush x:Key="OnInkBrush" Color="#111317"/>
+    <SolidColorBrush x:Key="TextBrush" Color="#E5E7EB"/>
+    <SolidColorBrush x:Key="MutedBrush" Color="#9CA3AF"/>
+    <SolidColorBrush x:Key="SubtleBrush" Color="#6E7681"/>
+    <SolidColorBrush x:Key="LineBrush" Color="#2A2F37"/>
+    <SolidColorBrush x:Key="LineStrongBrush" Color="#3D434D"/>
+    <SolidColorBrush x:Key="RowLineBrush" Color="#23272E"/>
+    <SolidColorBrush x:Key="SelBrush" Color="#273040"/>
+    <SolidColorBrush x:Key="HoverBrush" Color="#22262D"/>
+    <SolidColorBrush x:Key="GhostBrush" Color="#262B33"/>
+    <SolidColorBrush x:Key="GhostHoverBrush" Color="#30363F"/>
+    <SolidColorBrush x:Key="ScrollThumbBrush" Color="#3D434D"/>
+    <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#5B626D"/>
+    <SolidColorBrush x:Key="IncBrush" Color="#34C38F"/>
+    <SolidColorBrush x:Key="IncSoftBrush" Color="#14322A"/>
+    <SolidColorBrush x:Key="ExpBrush" Color="#F26B70"/>
+    <SolidColorBrush x:Key="ExpSoftBrush" Color="#3A1F23"/>
+    <SolidColorBrush x:Key="ExpSoftHoverBrush" Color="#4A262B"/>
+    <SolidColorBrush x:Key="WarnBrush" Color="#F59E5B"/>
+    <SolidColorBrush x:Key="WarnSoftBrush" Color="#3A2819"/>
+    <LinearGradientBrush x:Key="HeroBrush" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#2E3746" Offset="0"/>
+        <GradientStop Color="#1E2430" Offset="1"/>
+    </LinearGradientBrush>
+</ResourceDictionary>

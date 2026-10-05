@@ -75,11 +75,10 @@ namespace ZZZ
                 center.Children.Add(t);
             }
             Children.Add(center);
-            Loaded += (_, _) =>
-            {
-                title.Foreground = sub.Foreground = (Brush)FindResource("MutedBrush");
-                value.Foreground = (Brush)FindResource("TextBrush");
-            };
+            // 用資源參照,切換深色/淺色時自動換色
+            title.SetResourceReference(TextBlock.ForegroundProperty, "MutedBrush");
+            sub.SetResourceReference(TextBlock.ForegroundProperty, "MutedBrush");
+            value.SetResourceReference(TextBlock.ForegroundProperty, "TextBrush");
             SizeChanged += (_, _) => Draw();
         }
 
@@ -111,7 +110,7 @@ namespace ZZZ
             {
                 double sweep = s.Amount / sum * 360;
                 var path = Ring(c, outer, inner, start, sweep, s.Brush);
-                path.Stroke = Brushes.White; // 白色細縫隔開每一塊
+                path.SetResourceReference(Shape.StrokeProperty, "SurfaceBrush"); // 與卡片同色的細縫隔開每一塊
                 path.StrokeThickness = slices.Count > 1 ? 2 : 0;
                 path.Cursor = Cursors.Hand;
                 path.RenderTransform = new ScaleTransform(1, 1, c.X, c.Y);
@@ -254,7 +253,7 @@ namespace ZZZ
 
                 var p = new Point(cx, Y(m.Net));
                 line.Points.Add(p);
-                var dot = new Ellipse { Width = 7, Height = 7, Fill = B("InkBrush"), Stroke = Brushes.White, StrokeThickness = 1.5, IsHitTestVisible = false };
+                var dot = new Ellipse { Width = 7, Height = 7, Fill = B("InkBrush"), Stroke = B("SurfaceBrush"), StrokeThickness = 1.5, IsHitTestVisible = false };
                 SetLeft(dot, p.X - 3.5);
                 SetTop(dot, p.Y - 3.5);
                 dots.Add(dot);

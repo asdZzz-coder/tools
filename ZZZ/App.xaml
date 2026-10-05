@@ -4,6 +4,12 @@
              xmlns:local="clr-namespace:ZZZ"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
-        <ResourceDictionary Source="Themes.xaml"/>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- 第一個是配色,App.SetTheme 會換成 Colors.Dark.xaml -->
+                <ResourceDictionary Source="Colors.Light.xaml"/>
+                <ResourceDictionary Source="Themes.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
     </Application.Resources>
 </Application>

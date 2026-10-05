@@ -52,6 +52,7 @@ namespace ZZZ
             Donut.HoverChanged += HighlightLegend;
             Bars.MonthClicked += m => { statsPeriod = m; RefreshStats(); };
 
+            ShowThemeButton();
             SourceInitialized += (_, _) => TintTitleBar();
             Loaded += (_, _) =>
             {
@@ -73,9 +74,29 @@ namespace ZZZ
         void TintTitleBar()
         {
             var hwnd = new WindowInteropHelper(this).Handle;
-            int caption = 0x00FFFFFF, border = 0x00EBE7E5; // COLORREF = 0x00BBGGRR
+            static int ColorRef(Brush b) => b is SolidColorBrush s ? s.Color.R | s.Color.G << 8 | s.Color.B << 16 : 0; // 0x00BBGGRR
+            int dark = App.IsDark ? 1 : 0, caption = ColorRef((Brush)FindResource("SurfaceBrush")),
+                border = ColorRef((Brush)FindResource("LineBrush"));
+            DwmSetWindowAttribute(hwnd, 20, ref dark, sizeof(int)); // 深色模式:標題列按鈕與文字改成淺色
             DwmSetWindowAttribute(hwnd, 35, ref caption, sizeof(int));
             DwmSetWindowAttribute(hwnd, 34, ref border, sizeof(int));
+        }
+
+        void ToggleTheme_Click(object sender, RoutedEventArgs e)
+        {
+            App.SetTheme(!App.IsDark);
+            ShowThemeButton();
+            TintTitleBar();
+            // 程式碼裡用 FindResource 設定的顏色(金額正負、圖表)要重新套用
+            RefreshAll();
+            RefreshDebts();
+        }
+
+        /// <summary>按鈕顯示「切換過去」的模式:淺色時顯示月亮「深色模式」,深色時顯示太陽「淺色模式」。</summary>
+        void ShowThemeButton()
+        {
+            ThemeIcon.Text = App.IsDark ? "" : "";
+            ThemeText.Text = App.IsDark ? "淺色模式" : "深色模式";
         }
 
         void Tab_Checked(object sender, RoutedEventArgs e)

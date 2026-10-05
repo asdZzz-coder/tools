@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:ZZZ"
         Title="簡易記帳" Icon="Assets/AppIcon.ico" Width="1280" Height="800" MinWidth="1200" MinHeight="680"
-        WindowStartupLocation="CenterScreen" Background="{StaticResource BgBrush}"
-        FontFamily="{StaticResource AppFont}" Foreground="{StaticResource TextBrush}"
+        WindowStartupLocation="CenterScreen" Background="{DynamicResource BgBrush}"
+        FontFamily="{StaticResource AppFont}" Foreground="{DynamicResource TextBrush}"
         UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
     <Window.Resources>
         <!-- 側欄錢包項目 -->
@@ -16,23 +16,23 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <Border x:Name="Ico" Width="30" Height="30" CornerRadius="8" Background="{StaticResource GhostBrush}"
+                <Border x:Name="Ico" Width="30" Height="30" CornerRadius="8" Background="{DynamicResource GhostBrush}"
                         ToolTip="{Binding GoalTip}">
                     <TextBlock x:Name="IcoText" Text="{Binding Icon}" Style="{StaticResource Icon}" FontSize="14"
-                               Foreground="{StaticResource MutedBrush}"/>
+                               Foreground="{DynamicResource MutedBrush}"/>
                 </Border>
                 <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
                     <TextBlock x:Name="Name" Text="{Binding Name}" FontSize="14" TextTrimming="CharacterEllipsis"/>
                     <!-- 放了存錢目標的錢包:已分配給目標多少、還有多少可自由使用 -->
-                    <TextBlock x:Name="Alloc" Text="{Binding AllocText}" FontSize="11" Foreground="{StaticResource SubtleBrush}"
+                    <TextBlock x:Name="Alloc" Text="{Binding AllocText}" FontSize="11" Foreground="{DynamicResource SubtleBrush}"
                                Margin="0,1,0,0" TextTrimming="CharacterEllipsis" Visibility="Collapsed"
                                ToolTip="{Binding GoalTip}"/>
                 </StackPanel>
                 <TextBlock x:Name="Bal" Grid.Column="2" Text="{Binding BalanceText}" FontSize="13"
-                           Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+                           Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center"/>
                 <!-- 滑過時提示可拖曳排序 -->
                 <TextBlock x:Name="Grip" Grid.Column="3" Text="&#xE76F;" Style="{StaticResource Icon}" FontSize="12"
-                           Foreground="{StaticResource SubtleBrush}" Margin="8,0,-4,0" Visibility="Hidden"
+                           Foreground="{DynamicResource SubtleBrush}" Margin="8,0,-4,0" Visibility="Hidden"
                            ToolTip="拖曳可調整順序"/>
             </Grid>
             <DataTemplate.Triggers>
@@ -44,17 +44,17 @@
                     <Setter TargetName="Grip" Property="Visibility" Value="Visible"/>
                 </MultiDataTrigger>
                 <DataTrigger Binding="{Binding Negative}" Value="True">
-                    <Setter TargetName="Bal" Property="Foreground" Value="{StaticResource ExpBrush}"/>
+                    <Setter TargetName="Bal" Property="Foreground" Value="{DynamicResource ExpBrush}"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding HasGoals}" Value="True">
                     <Setter TargetName="Alloc" Property="Visibility" Value="Visible"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding OverAllocated}" Value="True">
-                    <Setter TargetName="Alloc" Property="Foreground" Value="{StaticResource WarnBrush}"/>
+                    <Setter TargetName="Alloc" Property="Foreground" Value="{DynamicResource WarnBrush}"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
-                    <Setter TargetName="Ico" Property="Background" Value="{StaticResource InkBrush}"/>
-                    <Setter TargetName="IcoText" Property="Foreground" Value="White"/>
+                    <Setter TargetName="Ico" Property="Background" Value="{DynamicResource InkBrush}"/>
+                    <Setter TargetName="IcoText" Property="Foreground" Value="{DynamicResource OnInkBrush}"/>
                     <Setter TargetName="Name" Property="FontWeight" Value="SemiBold"/>
                     <Setter TargetName="Bal" Property="FontWeight" Value="SemiBold"/>
                 </DataTrigger>
@@ -67,7 +67,7 @@
             <Setter Property="Margin" Value="14,0,0,0"/>
         </Style>
         <Style x:Key="StatLabel" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
@@ -78,7 +78,7 @@
             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
         </Style>
         <Style x:Key="StatSub" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource SubtleBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource SubtleBrush}"/>
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="Margin" Value="0,4,0,0"/>
         </Style>
@@ -100,6 +100,7 @@
 
         <!-- 存錢目標卡片 -->
         <Style x:Key="GoalItem" TargetType="ListBoxItem">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="Margin" Value="0,0,14,14"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
@@ -107,16 +108,16 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
-                        <Border x:Name="Bd" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource LineBrush}"
+                        <Border x:Name="Bd" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource LineBrush}"
                                 BorderThickness="1" CornerRadius="12" Padding="20,18">
                             <ContentPresenter/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource LineStrongBrush}"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource LineStrongBrush}"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource InkBrush}"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource InkBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -132,13 +133,13 @@
                         <ColumnDefinition/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <Border x:Name="Avatar" Width="40" Height="40" CornerRadius="12" Background="{StaticResource InkBrush}">
-                        <TextBlock Text="{Binding Initial}" Foreground="White" FontSize="16" FontWeight="Bold"
+                    <Border x:Name="Avatar" Width="40" Height="40" CornerRadius="12" Background="{DynamicResource InkBrush}">
+                        <TextBlock Text="{Binding Initial}" Foreground="{DynamicResource OnInkBrush}" FontSize="16" FontWeight="Bold"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Center">
                         <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock x:Name="Sub" Text="{Binding SubText}" Foreground="{StaticResource SubtleBrush}" FontSize="12"
+                        <TextBlock x:Name="Sub" Text="{Binding SubText}" Foreground="{DynamicResource SubtleBrush}" FontSize="12"
                                    Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
                     </StackPanel>
                     <Border x:Name="P" Grid.Column="2" Style="{StaticResource Pill}" VerticalAlignment="Top">
@@ -147,7 +148,7 @@
                 </Grid>
                 <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
                     <TextBlock Text="{Binding SavedText}" FontSize="24" FontWeight="Bold" VerticalAlignment="Bottom"/>
-                    <TextBlock Text="{Binding TargetText}" FontSize="14" Foreground="{StaticResource SubtleBrush}"
+                    <TextBlock Text="{Binding TargetText}" FontSize="14" Foreground="{DynamicResource SubtleBrush}"
                                VerticalAlignment="Bottom" Margin="6,0,0,3"/>
                 </StackPanel>
                 <Grid Margin="0,10,0,0">
@@ -157,9 +158,9 @@
                     </Grid.ColumnDefinitions>
                     <ProgressBar x:Name="Bar" Style="{StaticResource SlimProgress}" Height="8" Value="{Binding Progress, Mode=OneWay}"/>
                     <TextBlock Grid.Column="1" Text="{Binding PercentText}" FontSize="12" FontWeight="SemiBold"
-                               Foreground="{StaticResource MutedBrush}" Margin="10,0,0,0" MinWidth="34" TextAlignment="Right"/>
+                               Foreground="{DynamicResource MutedBrush}" Margin="10,0,0,0" MinWidth="34" TextAlignment="Right"/>
                 </Grid>
-                <TextBlock x:Name="Hint" Text="{Binding Hint}" Foreground="{StaticResource MutedBrush}" FontSize="12"
+                <TextBlock x:Name="Hint" Text="{Binding Hint}" Foreground="{DynamicResource MutedBrush}" FontSize="12"
                            Margin="0,8,0,0" TextTrimming="CharacterEllipsis"/>
                 <Grid Margin="0,14,0,0">
                     <Grid.ColumnDefinitions>
@@ -202,17 +203,17 @@
                     <Setter TargetName="WithdrawBtn" Property="Visibility" Value="Collapsed"/>
                     <Setter TargetName="PayBtn" Property="Visibility" Value="Visible"/>
                 </DataTrigger>                <DataTrigger Binding="{Binding Done}" Value="True">
-                    <Setter TargetName="P" Property="Background" Value="{StaticResource IncSoftBrush}"/>
-                    <Setter TargetName="PT" Property="Foreground" Value="{StaticResource IncBrush}"/>
-                    <Setter TargetName="Bar" Property="Foreground" Value="{StaticResource IncBrush}"/>
-                    <Setter TargetName="Avatar" Property="Background" Value="{StaticResource IncBrush}"/>
-                    <Setter TargetName="Hint" Property="Foreground" Value="{StaticResource IncBrush}"/>
+                    <Setter TargetName="P" Property="Background" Value="{DynamicResource IncSoftBrush}"/>
+                    <Setter TargetName="PT" Property="Foreground" Value="{DynamicResource IncBrush}"/>
+                    <Setter TargetName="Bar" Property="Foreground" Value="{DynamicResource IncBrush}"/>
+                    <Setter TargetName="Avatar" Property="Background" Value="{DynamicResource IncBrush}"/>
+                    <Setter TargetName="Hint" Property="Foreground" Value="{DynamicResource IncBrush}"/>
                 </DataTrigger>
                 <!-- 放在 Done 之後:每年繳費存足了但繳費日已過,仍要顯示橘色提醒 -->
                 <DataTrigger Binding="{Binding Late}" Value="True">
-                    <Setter TargetName="P" Property="Background" Value="{StaticResource WarnSoftBrush}"/>
-                    <Setter TargetName="PT" Property="Foreground" Value="{StaticResource WarnBrush}"/>
-                    <Setter TargetName="Hint" Property="Foreground" Value="{StaticResource WarnBrush}"/>
+                    <Setter TargetName="P" Property="Background" Value="{DynamicResource WarnSoftBrush}"/>
+                    <Setter TargetName="PT" Property="Foreground" Value="{DynamicResource WarnBrush}"/>
+                    <Setter TargetName="Hint" Property="Foreground" Value="{DynamicResource WarnBrush}"/>
                 </DataTrigger>
             </DataTemplate.Triggers>
         </DataTemplate>
@@ -226,15 +227,15 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <Border x:Name="Ico" Width="32" Height="32" CornerRadius="16" Background="{StaticResource IncSoftBrush}">
-                    <TextBlock x:Name="IcoT" Text="&#xE74A;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource IncBrush}"/>
+                <Border x:Name="Ico" Width="32" Height="32" CornerRadius="16" Background="{DynamicResource IncSoftBrush}">
+                    <TextBlock x:Name="IcoT" Text="&#xE74A;" Style="{StaticResource Icon}" FontSize="12" Foreground="{DynamicResource IncBrush}"/>
                 </Border>
                 <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
                     <TextBlock Text="{Binding Title}" FontSize="13" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Text="{Binding Date}" FontSize="11" Foreground="{StaticResource SubtleBrush}" Margin="0,2,0,0"/>
+                    <TextBlock Text="{Binding Date}" FontSize="11" Foreground="{DynamicResource SubtleBrush}" Margin="0,2,0,0"/>
                 </StackPanel>
                 <TextBlock x:Name="Amt" Grid.Column="2" Text="{Binding AmountText}" FontSize="13" FontWeight="SemiBold"
-                           Foreground="{StaticResource IncBrush}" VerticalAlignment="Center"/>
+                           Foreground="{DynamicResource IncBrush}" VerticalAlignment="Center"/>
                 <Button x:Name="Edit" Grid.Column="3" Style="{StaticResource IconButton}" Content="&#xE70F;" Width="28" Height="28"
                         FontSize="11" Margin="6,0,0,0" ToolTip="編輯這筆紀錄" Visibility="Hidden"
                         Click="DepositEdit_Click" Tag="{Binding}"/>
@@ -244,10 +245,10 @@
             </Grid>
             <DataTemplate.Triggers>
                 <DataTrigger Binding="{Binding IsDeposit}" Value="False">
-                    <Setter TargetName="Ico" Property="Background" Value="{StaticResource ExpSoftBrush}"/>
-                    <Setter TargetName="IcoT" Property="Foreground" Value="{StaticResource ExpBrush}"/>
+                    <Setter TargetName="Ico" Property="Background" Value="{DynamicResource ExpSoftBrush}"/>
+                    <Setter TargetName="IcoT" Property="Foreground" Value="{DynamicResource ExpBrush}"/>
                     <Setter TargetName="IcoT" Property="Text" Value="&#xE74B;"/>
-                    <Setter TargetName="Amt" Property="Foreground" Value="{StaticResource ExpBrush}"/>
+                    <Setter TargetName="Amt" Property="Foreground" Value="{DynamicResource ExpBrush}"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
                     <Setter TargetName="Edit" Property="Visibility" Value="Visible"/>
@@ -272,12 +273,12 @@
                         <Ellipse Width="10" Height="10" Fill="{Binding Brush}" VerticalAlignment="Center"/>
                         <StackPanel Grid.Column="1" Margin="10,0,8,0">
                             <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                            <TextBlock Text="{Binding Detail}" FontSize="11" Foreground="{StaticResource SubtleBrush}"
+                            <TextBlock Text="{Binding Detail}" FontSize="11" Foreground="{DynamicResource SubtleBrush}"
                                        Margin="0,1,0,0" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
                         <TextBlock Grid.Column="2" Text="{Binding AmountText}" FontSize="13" FontWeight="SemiBold"
                                    VerticalAlignment="Center"/>
-                        <TextBlock Grid.Column="3" Text="{Binding ShareText}" FontSize="12" Foreground="{StaticResource MutedBrush}"
+                        <TextBlock Grid.Column="3" Text="{Binding ShareText}" FontSize="12" Foreground="{DynamicResource MutedBrush}"
                                    MinWidth="52" TextAlignment="Right" VerticalAlignment="Center"/>
                     </Grid>
                     <ProgressBar Style="{StaticResource SlimProgress}" Height="4" Margin="20,7,0,0"
@@ -294,20 +295,20 @@
         </Grid.ColumnDefinitions>
 
         <!-- ================= 側欄 ================= -->
-        <Border Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,1,0">
+        <Border Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,0">
             <DockPanel Margin="16,22,16,16">
                 <!-- 標誌 -->
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="6,0,0,26">
                     <Image Source="Assets/AppIcon.png" Width="44" Height="44" RenderOptions.BitmapScalingMode="HighQuality"/>
                     <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
                         <TextBlock Text="簡易記帳" FontSize="18" FontWeight="Bold"/>
-                        <TextBlock x:Name="VersionText" Text="v1.0.0" Foreground="{StaticResource SubtleBrush}" FontSize="11" Margin="0,1,0,0"/>
+                        <TextBlock x:Name="VersionText" Text="v1.0.0" Foreground="{DynamicResource SubtleBrush}" FontSize="11" Margin="0,1,0,0"/>
                     </StackPanel>
                 </StackPanel>
 
                 <!-- 底部功能 -->
                 <StackPanel DockPanel.Dock="Bottom">
-                    <Border Height="1" Background="{StaticResource LineBrush}" Margin="4,0,4,10"/>
+                    <Border Height="1" Background="{DynamicResource LineBrush}" Margin="4,0,4,10"/>
                     <Button Style="{StaticResource NavButton}" Click="ManageCategories_Click">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE8EC;" Style="{StaticResource Icon}" FontSize="14" Width="20"/>
@@ -330,6 +331,12 @@
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE895;" Style="{StaticResource Icon}" FontSize="14" Width="20"/>
                             <TextBlock Text="檢查更新" Margin="10,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="ThemeBtn" Style="{StaticResource NavButton}" Click="ToggleTheme_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="ThemeIcon" Text="&#xE708;" Style="{StaticResource Icon}" FontSize="14" Width="20"/>
+                            <TextBlock x:Name="ThemeText" Text="深色模式" Margin="10,0,0,0"/>
                         </StackPanel>
                     </Button>
                     <Button Style="{StaticResource NavButton}" Click="About_Click">
@@ -369,7 +376,7 @@
                     </Grid>
                 </StackPanel>
 
-                <TextBlock DockPanel.Dock="Top" Text="錢包 / 戶頭" Foreground="{StaticResource SubtleBrush}"
+                <TextBlock DockPanel.Dock="Top" Text="錢包 / 戶頭" Foreground="{DynamicResource SubtleBrush}"
                            FontSize="12" FontWeight="SemiBold" Margin="8,0,0,10"/>
                 <ListBox x:Name="WalletList" Style="{StaticResource PlainList}" ItemContainerStyle="{StaticResource SoftItem}"
                          ItemTemplate="{StaticResource WalletTemplate}" SelectionChanged="WalletList_SelectionChanged"
@@ -386,7 +393,7 @@
             </Grid.RowDefinitions>
 
             <DockPanel Margin="0,0,0,18">
-                <TextBlock x:Name="TodayText" DockPanel.Dock="Right" Foreground="{StaticResource SubtleBrush}"
+                <TextBlock x:Name="TodayText" DockPanel.Dock="Right" Foreground="{DynamicResource SubtleBrush}"
                            FontSize="13" VerticalAlignment="Center"/>
                 <StackPanel Orientation="Horizontal">
                     <RadioButton x:Name="TabRecords" Style="{StaticResource TabRadio}" Content="收支記錄"
@@ -417,7 +424,7 @@
                         <ColumnDefinition/>
                         <ColumnDefinition/>
                     </Grid.ColumnDefinitions>
-                    <Border Background="{StaticResource HeroBrush}" CornerRadius="12" Padding="22,16">
+                    <Border Background="{DynamicResource HeroBrush}" CornerRadius="12" Padding="22,16">
                         <StackPanel>
                             <Grid>
                                 <TextBlock Text="目前總餘額" Foreground="#AEB6C3" FontSize="13"/>
@@ -433,11 +440,11 @@
                         <StackPanel>
                             <Grid>
                                 <TextBlock Text="收入" Style="{StaticResource StatLabel}"/>
-                                <Border Style="{StaticResource StatIcon}" Background="{StaticResource IncSoftBrush}">
-                                    <TextBlock Text="&#xE74A;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource IncBrush}"/>
+                                <Border Style="{StaticResource StatIcon}" Background="{DynamicResource IncSoftBrush}">
+                                    <TextBlock Text="&#xE74A;" Style="{StaticResource Icon}" FontSize="12" Foreground="{DynamicResource IncBrush}"/>
                                 </Border>
                             </Grid>
-                            <TextBlock x:Name="IncomeText" Text="0" Style="{StaticResource StatValue}" Foreground="{StaticResource IncBrush}"/>
+                            <TextBlock x:Name="IncomeText" Text="0" Style="{StaticResource StatValue}" Foreground="{DynamicResource IncBrush}"/>
                             <TextBlock x:Name="IncomeSub" Style="{StaticResource StatSub}"/>
                         </StackPanel>
                     </Border>
@@ -445,11 +452,11 @@
                         <StackPanel>
                             <Grid>
                                 <TextBlock Text="支出" Style="{StaticResource StatLabel}"/>
-                                <Border Style="{StaticResource StatIcon}" Background="{StaticResource ExpSoftBrush}">
-                                    <TextBlock Text="&#xE74B;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource ExpBrush}"/>
+                                <Border Style="{StaticResource StatIcon}" Background="{DynamicResource ExpSoftBrush}">
+                                    <TextBlock Text="&#xE74B;" Style="{StaticResource Icon}" FontSize="12" Foreground="{DynamicResource ExpBrush}"/>
                                 </Border>
                             </Grid>
-                            <TextBlock x:Name="ExpenseText" Text="0" Style="{StaticResource StatValue}" Foreground="{StaticResource ExpBrush}"/>
+                            <TextBlock x:Name="ExpenseText" Text="0" Style="{StaticResource StatValue}" Foreground="{DynamicResource ExpBrush}"/>
                             <TextBlock x:Name="ExpenseSub" Style="{StaticResource StatSub}"/>
                         </StackPanel>
                     </Border>
@@ -457,8 +464,8 @@
                         <StackPanel>
                             <Grid>
                                 <TextBlock Text="期間結餘" Style="{StaticResource StatLabel}"/>
-                                <Border Style="{StaticResource StatIcon}" Background="{StaticResource GhostBrush}">
-                                    <TextBlock Text="&#xE8EF;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource MutedBrush}"/>
+                                <Border Style="{StaticResource StatIcon}" Background="{DynamicResource GhostBrush}">
+                                    <TextBlock Text="&#xE8EF;" Style="{StaticResource Icon}" FontSize="12" Foreground="{DynamicResource MutedBrush}"/>
                                 </Border>
                             </Grid>
                             <TextBlock x:Name="NetText" Text="0" Style="{StaticResource StatValue}"/>
@@ -557,16 +564,16 @@
                         <Button Style="{StaticResource OutlineButton}" Content="本月" Margin="10,0,0,0" Click="ThisMonth_Click"/>
                         <Button Style="{StaticResource OutlineButton}" Content="全部期間" Margin="8,0,0,0" Click="AllPeriod_Click"/>
                         <!-- 從支出圖表點分類過來時的分類篩選 -->
-                        <Border x:Name="CatChip" Style="{StaticResource Pill}" Background="{StaticResource InkBrush}"
+                        <Border x:Name="CatChip" Style="{StaticResource Pill}" Background="{DynamicResource InkBrush}"
                                 Padding="12,0,4,0" Height="30" CornerRadius="15" Margin="12,0,0,0" Visibility="Collapsed">
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock x:Name="CatChipText" Foreground="White" FontSize="12" FontWeight="SemiBold"
+                                <TextBlock x:Name="CatChipText" Foreground="{DynamicResource OnInkBrush}" FontSize="12" FontWeight="SemiBold"
                                            VerticalAlignment="Center"/>
                                 <Button Style="{StaticResource IconButton}" Content="&#xE711;" Width="24" Height="24" FontSize="10"
-                                        Foreground="#AEB6C3" Margin="4,0,0,0" ToolTip="清除分類篩選" Click="ClearCatFilter_Click"/>
+                                        Foreground="{DynamicResource SubtleBrush}" Margin="4,0,0,0" ToolTip="清除分類篩選" Click="ClearCatFilter_Click"/>
                             </StackPanel>
                         </Border>
-                        <TextBlock x:Name="RecCount" Foreground="{StaticResource SubtleBrush}" FontSize="13"
+                        <TextBlock x:Name="RecCount" Foreground="{DynamicResource SubtleBrush}" FontSize="13"
                                    VerticalAlignment="Center" Margin="16,0,0,0"/>
                     </StackPanel>
                 </DockPanel>
@@ -581,13 +588,13 @@
                                 <DataGridTemplateColumn Header="類型" Width="90">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
-                                            <Border x:Name="P" Style="{StaticResource Pill}" Background="{StaticResource ExpSoftBrush}">
-                                                <TextBlock x:Name="T" Text="{Binding Type}" Style="{StaticResource PillText}" Foreground="{StaticResource ExpBrush}"/>
+                                            <Border x:Name="P" Style="{StaticResource Pill}" Background="{DynamicResource ExpSoftBrush}">
+                                                <TextBlock x:Name="T" Text="{Binding Type}" Style="{StaticResource PillText}" Foreground="{DynamicResource ExpBrush}"/>
                                             </Border>
                                             <DataTemplate.Triggers>
                                                 <DataTrigger Binding="{Binding IsIncome}" Value="True">
-                                                    <Setter TargetName="P" Property="Background" Value="{StaticResource IncSoftBrush}"/>
-                                                    <Setter TargetName="T" Property="Foreground" Value="{StaticResource IncBrush}"/>
+                                                    <Setter TargetName="P" Property="Background" Value="{DynamicResource IncSoftBrush}"/>
+                                                    <Setter TargetName="T" Property="Foreground" Value="{DynamicResource IncBrush}"/>
                                                 </DataTrigger>
                                             </DataTemplate.Triggers>
                                         </DataTemplate>
@@ -598,10 +605,10 @@
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <TextBlock x:Name="A" Text="{Binding AmountText}" Style="{StaticResource CellNumber}"
-                                                       FontWeight="SemiBold" Foreground="{StaticResource ExpBrush}"/>
+                                                       FontWeight="SemiBold" Foreground="{DynamicResource ExpBrush}"/>
                                             <DataTemplate.Triggers>
                                                 <DataTrigger Binding="{Binding IsIncome}" Value="True">
-                                                    <Setter TargetName="A" Property="Foreground" Value="{StaticResource IncBrush}"/>
+                                                    <Setter TargetName="A" Property="Foreground" Value="{DynamicResource IncBrush}"/>
                                                 </DataTrigger>
                                             </DataTemplate.Triggers>
                                         </DataTemplate>
@@ -612,12 +619,12 @@
                         </DataGrid>
                         <StackPanel x:Name="RecEmpty" HorizontalAlignment="Center" VerticalAlignment="Center"
                                     IsHitTestVisible="False" Margin="0,40,0,0">
-                            <Border Width="56" Height="56" CornerRadius="28" Background="{StaticResource GhostBrush}">
-                                <TextBlock Text="&#xE9F9;" Style="{StaticResource Icon}" FontSize="22" Foreground="{StaticResource SubtleBrush}"/>
+                            <Border Width="56" Height="56" CornerRadius="28" Background="{DynamicResource GhostBrush}">
+                                <TextBlock Text="&#xE9F9;" Style="{StaticResource Icon}" FontSize="22" Foreground="{DynamicResource SubtleBrush}"/>
                             </Border>
-                            <TextBlock Text="這段期間還沒有記錄" Foreground="{StaticResource MutedBrush}" FontSize="14"
+                            <TextBlock Text="這段期間還沒有記錄" Foreground="{DynamicResource MutedBrush}" FontSize="14"
                                        HorizontalAlignment="Center" Margin="0,12,0,0"/>
-                            <TextBlock Text="在上方表單輸入第一筆收支吧" Foreground="{StaticResource SubtleBrush}" FontSize="12"
+                            <TextBlock Text="在上方表單輸入第一筆收支吧" Foreground="{DynamicResource SubtleBrush}" FontSize="12"
                                        HorizontalAlignment="Center" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Grid>
@@ -639,7 +646,7 @@
                         <ColumnDefinition/>
                         <ColumnDefinition/>
                     </Grid.ColumnDefinitions>
-                    <Border Background="{StaticResource HeroBrush}" CornerRadius="12" Padding="22,16">
+                    <Border Background="{DynamicResource HeroBrush}" CornerRadius="12" Padding="22,16">
                         <StackPanel>
                             <Grid>
                                 <TextBlock Text="淨額(別人欠我 − 我欠別人)" Foreground="#AEB6C3" FontSize="13"/>
@@ -655,11 +662,11 @@
                         <StackPanel>
                             <Grid>
                                 <TextBlock Text="別人欠我(未還)" Style="{StaticResource StatLabel}"/>
-                                <Border Style="{StaticResource StatIcon}" Background="{StaticResource IncSoftBrush}">
-                                    <TextBlock Text="&#xE72A;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource IncBrush}"/>
+                                <Border Style="{StaticResource StatIcon}" Background="{DynamicResource IncSoftBrush}">
+                                    <TextBlock Text="&#xE72A;" Style="{StaticResource Icon}" FontSize="12" Foreground="{DynamicResource IncBrush}"/>
                                 </Border>
                             </Grid>
-                            <TextBlock x:Name="LentText" Text="0" Style="{StaticResource StatValue}" Foreground="{StaticResource IncBrush}"/>
+                            <TextBlock x:Name="LentText" Text="0" Style="{StaticResource StatValue}" Foreground="{DynamicResource IncBrush}"/>
                             <TextBlock x:Name="LentSub" Style="{StaticResource StatSub}"/>
                         </StackPanel>
                     </Border>
@@ -667,11 +674,11 @@
                         <StackPanel>
                             <Grid>
                                 <TextBlock Text="我欠別人(未還)" Style="{StaticResource StatLabel}"/>
-                                <Border Style="{StaticResource StatIcon}" Background="{StaticResource ExpSoftBrush}">
-                                    <TextBlock Text="&#xE72B;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource ExpBrush}"/>
+                                <Border Style="{StaticResource StatIcon}" Background="{DynamicResource ExpSoftBrush}">
+                                    <TextBlock Text="&#xE72B;" Style="{StaticResource Icon}" FontSize="12" Foreground="{DynamicResource ExpBrush}"/>
                                 </Border>
                             </Grid>
-                            <TextBlock x:Name="OweText" Text="0" Style="{StaticResource StatValue}" Foreground="{StaticResource ExpBrush}"/>
+                            <TextBlock x:Name="OweText" Text="0" Style="{StaticResource StatValue}" Foreground="{DynamicResource ExpBrush}"/>
                             <TextBlock x:Name="OweSub" Style="{StaticResource StatSub}"/>
                         </StackPanel>
                     </Border>
@@ -770,7 +777,7 @@
                                              GroupName="DebtFilter" Checked="DebtFilter_Checked"/>
                             </UniformGrid>
                         </Border>
-                        <TextBlock x:Name="DebtCount" Foreground="{StaticResource SubtleBrush}" FontSize="13"
+                        <TextBlock x:Name="DebtCount" Foreground="{DynamicResource SubtleBrush}" FontSize="13"
                                    VerticalAlignment="Center" Margin="16,0,0,0"/>
                     </StackPanel>
                 </DockPanel>
@@ -785,13 +792,13 @@
                                 <DataGridTemplateColumn Header="方向" Width="100">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
-                                            <Border x:Name="P" Style="{StaticResource Pill}" Background="{StaticResource IncSoftBrush}">
-                                                <TextBlock x:Name="T" Text="{Binding Direction}" Style="{StaticResource PillText}" Foreground="{StaticResource IncBrush}"/>
+                                            <Border x:Name="P" Style="{StaticResource Pill}" Background="{DynamicResource IncSoftBrush}">
+                                                <TextBlock x:Name="T" Text="{Binding Direction}" Style="{StaticResource PillText}" Foreground="{DynamicResource IncBrush}"/>
                                             </Border>
                                             <DataTemplate.Triggers>
                                                 <DataTrigger Binding="{Binding IOwe}" Value="True">
-                                                    <Setter TargetName="P" Property="Background" Value="{StaticResource ExpSoftBrush}"/>
-                                                    <Setter TargetName="T" Property="Foreground" Value="{StaticResource ExpBrush}"/>
+                                                    <Setter TargetName="P" Property="Background" Value="{DynamicResource ExpSoftBrush}"/>
+                                                    <Setter TargetName="T" Property="Foreground" Value="{DynamicResource ExpBrush}"/>
                                                 </DataTrigger>
                                             </DataTemplate.Triggers>
                                         </DataTemplate>
@@ -805,10 +812,10 @@
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <TextBlock x:Name="R" Text="{Binding Rest, StringFormat=N0}" Style="{StaticResource CellNumber}"
-                                                       FontWeight="SemiBold" Foreground="{StaticResource IncBrush}"/>
+                                                       FontWeight="SemiBold" Foreground="{DynamicResource IncBrush}"/>
                                             <DataTemplate.Triggers>
                                                 <DataTrigger Binding="{Binding IOwe}" Value="True">
-                                                    <Setter TargetName="R" Property="Foreground" Value="{StaticResource ExpBrush}"/>
+                                                    <Setter TargetName="R" Property="Foreground" Value="{DynamicResource ExpBrush}"/>
                                                 </DataTrigger>
                                             </DataTemplate.Triggers>
                                         </DataTemplate>
@@ -832,8 +839,8 @@
                                             </Border>
                                             <DataTemplate.Triggers>
                                                 <DataTrigger Binding="{Binding Late}" Value="True">
-                                                    <Setter TargetName="P" Property="Background" Value="{StaticResource WarnSoftBrush}"/>
-                                                    <Setter TargetName="T" Property="Foreground" Value="{StaticResource WarnBrush}"/>
+                                                    <Setter TargetName="P" Property="Background" Value="{DynamicResource WarnSoftBrush}"/>
+                                                    <Setter TargetName="T" Property="Foreground" Value="{DynamicResource WarnBrush}"/>
                                                 </DataTrigger>
                                             </DataTemplate.Triggers>
                                         </DataTemplate>
@@ -844,10 +851,10 @@
                         </DataGrid>
                         <StackPanel x:Name="DebtEmpty" HorizontalAlignment="Center" VerticalAlignment="Center"
                                     IsHitTestVisible="False" Margin="0,40,0,0">
-                            <Border Width="56" Height="56" CornerRadius="28" Background="{StaticResource GhostBrush}">
-                                <TextBlock Text="&#xE73E;" Style="{StaticResource Icon}" FontSize="22" Foreground="{StaticResource SubtleBrush}"/>
+                            <Border Width="56" Height="56" CornerRadius="28" Background="{DynamicResource GhostBrush}">
+                                <TextBlock Text="&#xE73E;" Style="{StaticResource Icon}" FontSize="22" Foreground="{DynamicResource SubtleBrush}"/>
                             </Border>
-                            <TextBlock x:Name="DebtEmptyText" Text="沒有未還清的欠款" Foreground="{StaticResource MutedBrush}"
+                            <TextBlock x:Name="DebtEmptyText" Text="沒有未還清的欠款" Foreground="{DynamicResource MutedBrush}"
                                        FontSize="14" HorizontalAlignment="Center" Margin="0,12,0,0"/>
                         </StackPanel>
                     </Grid>
@@ -868,7 +875,7 @@
                         <ColumnDefinition/>
                         <ColumnDefinition/>
                     </Grid.ColumnDefinitions>
-                    <Border Background="{StaticResource HeroBrush}" CornerRadius="12" Padding="22,16">
+                    <Border Background="{DynamicResource HeroBrush}" CornerRadius="12" Padding="22,16">
                         <StackPanel>
                             <Grid>
                                 <TextBlock Text="已存總額" Foreground="#AEB6C3" FontSize="13"/>
@@ -892,8 +899,8 @@
                         <StackPanel>
                             <Grid>
                                 <TextBlock Text="目標總額" Style="{StaticResource StatLabel}"/>
-                                <Border Style="{StaticResource StatIcon}" Background="{StaticResource GhostBrush}">
-                                    <TextBlock Text="&#xE7C1;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource MutedBrush}"/>
+                                <Border Style="{StaticResource StatIcon}" Background="{DynamicResource GhostBrush}">
+                                    <TextBlock Text="&#xE7C1;" Style="{StaticResource Icon}" FontSize="12" Foreground="{DynamicResource MutedBrush}"/>
                                 </Border>
                             </Grid>
                             <TextBlock x:Name="GoalTargetText" Text="0" Style="{StaticResource StatValue}"/>
@@ -904,11 +911,11 @@
                         <StackPanel>
                             <Grid>
                                 <TextBlock Text="已達成" Style="{StaticResource StatLabel}"/>
-                                <Border Style="{StaticResource StatIcon}" Background="{StaticResource IncSoftBrush}">
-                                    <TextBlock Text="&#xE73E;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource IncBrush}"/>
+                                <Border Style="{StaticResource StatIcon}" Background="{DynamicResource IncSoftBrush}">
+                                    <TextBlock Text="&#xE73E;" Style="{StaticResource Icon}" FontSize="12" Foreground="{DynamicResource IncBrush}"/>
                                 </Border>
                             </Grid>
-                            <TextBlock x:Name="GoalDoneText" Text="0" Style="{StaticResource StatValue}" Foreground="{StaticResource IncBrush}"/>
+                            <TextBlock x:Name="GoalDoneText" Text="0" Style="{StaticResource StatValue}" Foreground="{DynamicResource IncBrush}"/>
                             <TextBlock x:Name="GoalDoneSub" Style="{StaticResource StatSub}"/>
                         </StackPanel>
                     </Border>
@@ -923,7 +930,7 @@
                     </Button>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock Text="我的目標" Style="{StaticResource SectionTitle}" FontSize="15"/>
-                        <TextBlock x:Name="GoalCount" Foreground="{StaticResource SubtleBrush}" FontSize="13"
+                        <TextBlock x:Name="GoalCount" Foreground="{DynamicResource SubtleBrush}" FontSize="13"
                                    VerticalAlignment="Center" Margin="10,0,0,0"/>
                     </StackPanel>
                 </DockPanel>
@@ -945,12 +952,12 @@
                     </ListBox>
                     <Border x:Name="GoalEmpty" Style="{StaticResource Card}">
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <Border Width="64" Height="64" CornerRadius="32" Background="{StaticResource GhostBrush}">
-                                <TextBlock Text="&#xE735;" Style="{StaticResource Icon}" FontSize="26" Foreground="{StaticResource SubtleBrush}"/>
+                            <Border Width="64" Height="64" CornerRadius="32" Background="{DynamicResource GhostBrush}">
+                                <TextBlock Text="&#xE735;" Style="{StaticResource Icon}" FontSize="26" Foreground="{DynamicResource SubtleBrush}"/>
                             </Border>
-                            <TextBlock Text="還沒有存錢目標" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold"
+                            <TextBlock Text="還沒有存錢目標" Foreground="{DynamicResource TextBrush}" FontSize="15" FontWeight="SemiBold"
                                        HorizontalAlignment="Center" Margin="0,14,0,0"/>
-                            <TextBlock Text="設定一個目標,例如旅行基金、新手機,或每年要繳的稅金、保險費" Foreground="{StaticResource MutedBrush}"
+                            <TextBlock Text="設定一個目標,例如旅行基金、新手機,或每年要繳的稅金、保險費" Foreground="{DynamicResource MutedBrush}"
                                        FontSize="12" HorizontalAlignment="Center" Margin="0,6,0,16"/>
                             <Button Style="{StaticResource AccentButton}" HorizontalAlignment="Center" Click="AddGoal_Click">
                                 <StackPanel Orientation="Horizontal">
@@ -966,7 +973,7 @@
                         <DockPanel>
                             <StackPanel DockPanel.Dock="Top" Margin="0,0,8,12">
                                 <TextBlock Text="存取紀錄" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock x:Name="GoalDetailName" Foreground="{StaticResource MutedBrush}" FontSize="12"
+                                <TextBlock x:Name="GoalDetailName" Foreground="{DynamicResource MutedBrush}" FontSize="12"
                                            Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
                             <Grid>
@@ -982,7 +989,7 @@
                                         </Style>
                                     </ListBox.ItemContainerStyle>
                                 </ListBox>
-                                <TextBlock x:Name="DepositEmpty" Text="選擇左側的目標查看紀錄" Foreground="{StaticResource SubtleBrush}"
+                                <TextBlock x:Name="DepositEmpty" Text="選擇左側的目標查看紀錄" Foreground="{DynamicResource SubtleBrush}"
                                            FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"
                                            TextAlignment="Center" IsHitTestVisible="False"/>
                             </Grid>
@@ -1001,7 +1008,7 @@
 
                 <!-- 期間 -->
                 <DockPanel Margin="0,0,0,16">
-                    <TextBlock x:Name="StatWalletText" DockPanel.Dock="Right" Foreground="{StaticResource SubtleBrush}"
+                    <TextBlock x:Name="StatWalletText" DockPanel.Dock="Right" Foreground="{DynamicResource SubtleBrush}"
                                FontSize="13" VerticalAlignment="Center"/>
                     <StackPanel Orientation="Horizontal">
                         <Border Style="{StaticResource Card}" CornerRadius="10" Padding="3">
@@ -1028,7 +1035,7 @@
                         <ColumnDefinition/>
                         <ColumnDefinition/>
                     </Grid.ColumnDefinitions>
-                    <Border Background="{StaticResource HeroBrush}" CornerRadius="12" Padding="22,16">
+                    <Border Background="{DynamicResource HeroBrush}" CornerRadius="12" Padding="22,16">
                         <StackPanel>
                             <Grid>
                                 <TextBlock Text="本期支出" Foreground="#AEB6C3" FontSize="13"/>
@@ -1045,8 +1052,8 @@
                         <StackPanel>
                             <Grid>
                                 <TextBlock x:Name="StatCompareLabel" Text="與上個月相比" Style="{StaticResource StatLabel}"/>
-                                <Border Style="{StaticResource StatIcon}" Background="{StaticResource GhostBrush}">
-                                    <TextBlock Text="&#xE8AB;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource MutedBrush}"/>
+                                <Border Style="{StaticResource StatIcon}" Background="{DynamicResource GhostBrush}">
+                                    <TextBlock Text="&#xE8AB;" Style="{StaticResource Icon}" FontSize="12" Foreground="{DynamicResource MutedBrush}"/>
                                 </Border>
                             </Grid>
                             <TextBlock x:Name="StatCompareText" Text="—" Style="{StaticResource StatValue}"/>
@@ -1057,8 +1064,8 @@
                         <StackPanel>
                             <Grid>
                                 <TextBlock Text="平均每天" Style="{StaticResource StatLabel}"/>
-                                <Border Style="{StaticResource StatIcon}" Background="{StaticResource GhostBrush}">
-                                    <TextBlock Text="&#xE787;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource MutedBrush}"/>
+                                <Border Style="{StaticResource StatIcon}" Background="{DynamicResource GhostBrush}">
+                                    <TextBlock Text="&#xE787;" Style="{StaticResource Icon}" FontSize="12" Foreground="{DynamicResource MutedBrush}"/>
                                 </Border>
                             </Grid>
                             <TextBlock x:Name="StatAvgText" Text="0" Style="{StaticResource StatValue}"/>
@@ -1069,8 +1076,8 @@
                         <StackPanel>
                             <Grid>
                                 <TextBlock Text="最大一筆" Style="{StaticResource StatLabel}"/>
-                                <Border Style="{StaticResource StatIcon}" Background="{StaticResource ExpSoftBrush}">
-                                    <TextBlock Text="&#xE74B;" Style="{StaticResource Icon}" FontSize="12" Foreground="{StaticResource ExpBrush}"/>
+                                <Border Style="{StaticResource StatIcon}" Background="{DynamicResource ExpSoftBrush}">
+                                    <TextBlock Text="&#xE74B;" Style="{StaticResource Icon}" FontSize="12" Foreground="{DynamicResource ExpBrush}"/>
                                 </Border>
                             </Grid>
                             <TextBlock x:Name="StatMaxText" Text="—" Style="{StaticResource StatValue}"/>
@@ -1091,7 +1098,7 @@
                         <DockPanel>
                             <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,10,10">
                                 <TextBlock Text="支出分類" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock Text="點分類可查看明細" Foreground="{StaticResource SubtleBrush}" FontSize="12"
+                                <TextBlock Text="點分類可查看明細" Foreground="{DynamicResource SubtleBrush}" FontSize="12"
                                            VerticalAlignment="Center" Margin="10,1,0,0"/>
                             </StackPanel>
                             <Grid>
@@ -1111,7 +1118,7 @@
                                         </ControlTemplate>
                                     </ItemsControl.Template>
                                 </ItemsControl>
-                                <TextBlock x:Name="CatEmpty" Grid.Column="1" Text="這段期間沒有支出" Foreground="{StaticResource SubtleBrush}"
+                                <TextBlock x:Name="CatEmpty" Grid.Column="1" Text="這段期間沒有支出" Foreground="{DynamicResource SubtleBrush}"
                                            FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
                             </Grid>
                         </DockPanel>
@@ -1121,16 +1128,16 @@
                         <DockPanel>
                             <DockPanel DockPanel.Dock="Top" Margin="4,0,0,12">
                                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{StaticResource IncBrush}"/>
-                                    <TextBlock Text="收入" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="5,0,12,0"/>
-                                    <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{StaticResource ExpBrush}"/>
-                                    <TextBlock Text="支出" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="5,0,12,0"/>
-                                    <Rectangle Width="14" Height="2" Fill="{StaticResource InkBrush}"/>
-                                    <TextBlock Text="結餘" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="5,0,0,0"/>
+                                    <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{DynamicResource IncBrush}"/>
+                                    <TextBlock Text="收入" FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="5,0,12,0"/>
+                                    <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{DynamicResource ExpBrush}"/>
+                                    <TextBlock Text="支出" FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="5,0,12,0"/>
+                                    <Rectangle Width="14" Height="2" Fill="{DynamicResource InkBrush}"/>
+                                    <TextBlock Text="結餘" FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="5,0,0,0"/>
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock x:Name="BarTitle" Text="近 12 個月收支" Style="{StaticResource SectionTitle}"/>
-                                    <TextBlock Text="點月份可切換" Foreground="{StaticResource SubtleBrush}" FontSize="12"
+                                    <TextBlock Text="點月份可切換" Foreground="{DynamicResource SubtleBrush}" FontSize="12"
                                                VerticalAlignment="Center" Margin="10,1,0,0"/>
                                 </StackPanel>
                             </DockPanel>
