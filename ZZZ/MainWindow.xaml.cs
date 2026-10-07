@@ -386,7 +386,8 @@ namespace ZZZ
             if (!converting) fields.Add(new Field("類型", Database.CreditCard, Options: [Database.CreditCard, NormalWallet, SavingsWallet]));
             bool ToCard(string[] vals) => converting || vals[5] == Database.CreditCard;
             var v = DialogWindow.Prompt(this, converting ? "改成信用卡" : "編輯信用卡",
-                converting ? $"「{w.Name}」目前的餘額 {Money(w.Balance)} 會當作這張卡的欠款(負數代表欠款)。"
+                converting ? $"「{w.Name}」目前的餘額 {Money(w.Balance)} 會當作這張卡的" +
+                             (w.Balance > 0 ? "溢繳款(多繳的錢,之後刷卡會先扣)。" : "欠款(負數代表欠款)。")
                            : "繳卡費一律從「繳卡費的錢包」扣款。",
                 fields.ToArray(), vals => ToCard(vals) ? validate(vals) : vals[0] == "" ? "請輸入名稱" : null, "儲存");
             if (v == null) return;
@@ -400,6 +401,7 @@ namespace ZZZ
         /// <summary>
         /// 繳卡費:按「已繳費」才從卡片設定的扣款錢包轉一筆錢到信用卡
         /// (不算支出,刷卡時已經記過了)。要換扣款錢包請到「編輯錢包」。
+        /// 隨時都能繳,沒有欠款或超過欠款也可以,多繳的就是溢繳款(卡片餘額為正)。
         /// </summary>
         void PayCard_Click(object sender, RoutedEventArgs e)
         {
@@ -410,20 +412,22 @@ namespace ZZZ
                 DialogWindow.Info(this, "繳卡費", $"「{card.Name}」還沒有扣款錢包,請先按「編輯錢包」設定繳卡費的錢包。");
                 return;
             }
-            if (card.Owed <= 0.0001) { DialogWindow.Info(this, "繳卡費", $"「{card.Name}」目前沒有欠款。"); return; }
+            // 隨時都能繳:沒有欠款也能先繳,金額也可以超過欠款,多繳的變成溢繳款
             var bill = db.Bill(card);
-            var msg = (bill.Settled ? $"本期帳單已繳清,目前未出帳 {Money(bill.Unbilled)}。"
-                                    : $"本期帳單({bill.Closing:M/d} 結帳)還要繳 {Money(bill.Remaining)},繳款日 {bill.Due:M/d}。")
+            bool owing = card.Owed > 0.0001;
+            var msg = (!owing ? $"目前沒有欠款{(card.Credit > 0.0001 ? $"(已溢繳 {Money(card.Credit)})" : "")},現在繳的錢會成為溢繳款,之後刷卡會先扣。"
+                       : bill.Settled ? $"本期帳單已繳清,目前未出帳 {Money(bill.Unbilled)}。"
+                       : $"本期帳單({bill.Closing:M/d} 結帳)還要繳 {Money(bill.Remaining)},繳款日 {bill.Due:M/d}。")
+                      + (owing ? "\n金額可以超過欠款,多繳的部分會成為溢繳款。" : "")
                       + $"\n按「已繳費」後從「{payer.Name}」扣款,不會重複算成支出。";
             var v = DialogWindow.Prompt(this, $"繳卡費:{card.Name}", msg,
             [
-                new Field("已繳金額", (bill.Settled ? card.Owed : bill.Remaining).ToString("0.##")),
+                new Field("已繳金額", !owing ? "" : (bill.Settled ? card.Owed : bill.Remaining).ToString("0.##")),
                 new Field("繳費日期", DateTime.Today.ToString("yyyy-MM-dd"), "點日曆選擇,或直接輸入 YYYY-MM-DD", IsDate: true),
                 new Field("備註(可空白)", ""),
             ], vals =>
             {
                 if (!DialogWindow.TryParseAmount(vals[0], out var a) || a <= 0) return "金額需大於 0";
-                if (a > card.Owed + 0.0001) return $"超過目前的欠款 {Money(card.Owed)}";
                 if (!DateTime.TryParse(vals[1], out _)) return "日期格式為 YYYY-MM-DD";
                 return null;
             }, "已繳費");

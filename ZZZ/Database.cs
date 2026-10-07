@@ -14,6 +14,8 @@ namespace ZZZ
         public bool IsCard => Kind == Database.CreditCard;
         public bool IsSavings => Kind == Database.Savings;
         public double Owed => Math.Max(-Balance, 0);
+        /// <summary>信用卡多繳的錢(溢繳款),之後刷卡會先扣這筆。</summary>
+        public double Credit => IsCard ? Math.Max(Balance, 0) : 0;
     }
 
     /// <summary>
@@ -23,7 +25,9 @@ namespace ZZZ
     /// <param name="Statement">結帳當天的欠款</param>
     /// <param name="Remaining">本期還要繳的金額</param>
     /// <param name="Owed">目前總欠款</param>
-    public record CardBill(DateTime Closing, DateTime Due, double Statement, double Remaining, double Owed, double Limit)
+    /// <param name="Credit">多繳的錢(溢繳款)</param>
+    public record CardBill(DateTime Closing, DateTime Due, double Statement, double Remaining, double Owed, double Limit,
+                           double Credit = 0)
     {
         public double Paid => Math.Max(Statement - Remaining, 0);
         public double Unbilled => Math.Max(Owed - Remaining, 0);
@@ -53,13 +57,15 @@ namespace ZZZ
         }
 
         /// <summary>側欄錢包名稱下方那一行。</summary>
-        public string Short => Owed <= 0.0001 ? "沒有欠款"
+        public string Short => Credit > 0.0001 ? $"溢繳 {Credit:N0}"
+            : Owed <= 0.0001 ? "沒有欠款"
             : Late ? $"逾期未繳 {Remaining:N0}"
             : Settled ? "本期已繳清"
             : $"應繳 {Remaining:N0} · {Due:M/d} 前";
 
         /// <summary>收支記錄上方大卡片的說明行。</summary>
-        public string Detail => Owed <= 0.0001 ? "目前沒有欠款"
+        public string Detail => Credit > 0.0001 ? $"溢繳 {Credit:N0},之後刷卡會先扣"
+            : Owed <= 0.0001 ? "目前沒有欠款"
             : Late ? $"已過繳款日 {-DaysLeft} 天({Due:M/d})"
             : Settled ? $"本期已繳清 · 未出帳 {Unbilled:N0}"
             : $"{Due:M/d} 前繳(剩 {DaysLeft} 天)" + (Unbilled > 0.0001 ? $" · 未出帳 {Unbilled:N0}" : "");
@@ -74,7 +80,8 @@ namespace ZZZ
                     $"已繳 {Paid:N0},還要繳 {Remaining:N0},繳款日 {Due:M/d}",
                     $"未出帳 {Unbilled:N0},目前總欠款 {Owed:N0}",
                 };
-                if (Limit > 0) lines.Add($"信用額度 {Limit:N0},可用 {Limit - Owed:N0}");
+                if (Credit > 0.0001) lines.Add($"溢繳 {Credit:N0}(多繳的錢,之後刷卡會先扣)");
+                if (Limit > 0) lines.Add($"信用額度 {Limit:N0},可用 {Limit - Owed + Credit:N0}");
                 return string.Join("\n", lines);
             }
         }
@@ -360,7 +367,7 @@ namespace ZZZ
             var paid = Convert.ToDouble(Scalar("SELECT COALESCE(SUM(amount), 0) FROM transfers WHERE to_wallet = @p0 AND date > @p1", card.Id, c));
             double statement = Math.Max(-balance, 0);
             return new CardBill(closing, CardBill.DueAfter(closing, card.DueDay), statement,
-                                Math.Clamp(statement - paid, 0, card.Owed), card.Owed, card.Limit);
+                                Math.Clamp(statement - paid, 0, card.Owed), card.Owed, card.Limit, card.Credit);
         }
 
         /// <returns>新錢包 id;名稱重複時回傳 null</returns>
