@@ -106,8 +106,25 @@ namespace ZZZ
         public override string AmountText => Sign + Amount.ToString("N0");
     }
 
+    /// <summary>欠款經過錢包的錢,和收支記錄列在同一個清單,但不算收入或支出。</summary>
+    /// <param name="Id">借出/借入那一列是欠款 id;還款列是 debt_payments 的 id</param>
+    /// <param name="Payment">還款(false 為當初借出/借入那一筆)</param>
+    /// <param name="IOwe">我欠別人</param>
+    public record DebtMoveRow(long Id, string Date, long DebtId, bool Payment, long WalletId, string WalletName,
+                              string Person, bool IOwe, double Amount, string Note)
+        : RecordRow(Id, Date, IOwe != Payment ? $"{Person} → {WalletName}" : $"{WalletName} → {Person}", Database.DebtMove,
+                    Payment ? (IOwe ? Database.RepayOut : Database.RepayIn) : (IOwe ? Database.Borrow : Database.Lend), Amount, Note)
+    {
+        /// <summary>錢進到錢包:借入,或別人還我錢。</summary>
+        public bool In => IOwe != Payment;
+        public override bool IsTransfer => true;
+        public override string AmountText => (In ? "+" : "−") + Amount.ToString("N0");
+    }
+
+    /// <param name="WalletId">借出/借入的錢經過哪個錢包;null 為不經過錢包</param>
+    /// <param name="Payments">經過錢包的還款筆數</param>
     public record DebtRow(long Id, string Person, string Direction, double Amount, double Paid,
-                          string Date, string Due, string Note)
+                          string Date, string Due, string Note, long? WalletId = null, string WalletName = "", int Payments = 0)
     {
         public double Rest => Math.Max(Amount - Paid, 0);
         public bool Done => Amount - Paid <= 0.0001;
@@ -202,6 +219,8 @@ namespace ZZZ
         public const string CreditCard = "信用卡"; // wallets.kind
         public const string Savings = "存錢"; // wallets.kind:存錢用錢包,不算進流動資金
         public const string Transfer = "轉帳", CardPayment = "繳卡費", MoveFunds = "轉移資金"; // 清單中轉帳列的類型、分類
+        // 清單中欠款經過錢包那幾列的類型、分類
+        public const string DebtMove = "欠款", Lend = "借出", Borrow = "借入", RepayIn = "收回還款", RepayOut = "還款";
 
         static readonly string[] DefaultExpense = ["餐飲", "交通", "購物", "居住", "娛樂", "醫療", "其他"];
         static readonly string[] DefaultIncome = ["薪資", "獎金", "投資", "其他"];
@@ -296,6 +315,11 @@ namespace ZZZ
             }
             Exec("CREATE TABLE IF NOT EXISTS transfers(id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT," +
                  "from_wallet INTEGER, to_wallet INTEGER, amount REAL, note TEXT)");
+            if (!Columns("debts").Contains("wallet_id")) // 借出/借入的錢經過哪個錢包(NULL 為不經過錢包)
+                Exec("ALTER TABLE debts ADD COLUMN wallet_id INTEGER");
+            // 經過錢包的還款(不經過錢包的還款只累加 debts.paid)
+            Exec("CREATE TABLE IF NOT EXISTS debt_payments(id INTEGER PRIMARY KEY AUTOINCREMENT, debt_id INTEGER," +
+                 "date TEXT, wallet_id INTEGER, amount REAL, note TEXT)");
             if (Convert.ToInt64(Scalar("PRAGMA user_version")) < 1) ConvertLinkedGoals();
             EnsureDefaults();
         }
@@ -346,11 +370,15 @@ namespace ZZZ
             Exec("DELETE FROM categories WHERE type=@p0 AND name=@p1", type, name);
 
         // ---------- 錢包 ----------
-        // 錢包餘額 = 初始金額 + 收入 − 支出 + 轉入 − 轉出;until 有值時只算到那一天(含)
+        // 錢包餘額 = 初始金額 + 收入 − 支出 + 轉入 − 轉出 + 借入 − 借出 ± 經過錢包的還款;
+        // until 有值時只算到那一天(含)
         static string BalanceSql(string until) =>
             "w.initial + COALESCE((SELECT SUM(CASE type WHEN '收入' THEN amount ELSE -amount END) FROM records " +
             $"WHERE wallet_id = w.id{until}), 0) + COALESCE((SELECT SUM(amount) FROM transfers WHERE to_wallet = w.id{until}), 0) " +
-            $"- COALESCE((SELECT SUM(amount) FROM transfers WHERE from_wallet = w.id{until}), 0)";
+            $"- COALESCE((SELECT SUM(amount) FROM transfers WHERE from_wallet = w.id{until}), 0) " +
+            $"+ COALESCE((SELECT SUM(CASE direction WHEN '{IOwe}' THEN amount ELSE -amount END) FROM debts WHERE wallet_id = w.id{until}), 0) " +
+            $"+ COALESCE((SELECT SUM(CASE (SELECT d.direction FROM debts d WHERE d.id = debt_payments.debt_id) WHEN '{IOwe}' " +
+            $"THEN -amount ELSE amount END) FROM debt_payments WHERE wallet_id = w.id{until}), 0)";
 
         public List<Wallet> Wallets() => Query(
             $"SELECT w.id, w.name, {BalanceSql("")}, w.kind, w.credit_limit, w.closing_day, w.due_day, w.pay_wallet_id " +
@@ -430,6 +458,10 @@ namespace ZZZ
         public int WalletTransferCount(long id) =>
             Convert.ToInt32(Scalar("SELECT COUNT(*) FROM transfers WHERE from_wallet=@p0 OR to_wallet=@p0", id));
 
+        /// <summary>經過這個錢包的借出/借入與還款筆數。</summary>
+        public int WalletDebtCount(long id) =>
+            Convert.ToInt32(Scalar("SELECT (SELECT COUNT(*) FROM debts WHERE wallet_id=@p0) + (SELECT COUNT(*) FROM debt_payments WHERE wallet_id=@p0)", id));
+
         /// <summary>
         /// 刪除錢包與其中的記錄。和其他錢包之間的轉帳改成對方錢包的收支(分類「其他」),
         /// 讓對方的餘額不變:例如刪掉信用卡,從銀行繳過的卡費會變成銀行的支出。
@@ -451,6 +483,9 @@ namespace ZZZ
             Exec("DELETE FROM transfers WHERE from_wallet=@p0 OR to_wallet=@p0", id);
             Exec("DELETE FROM records WHERE wallet_id=@p0", id);
             Exec("UPDATE goals SET wallet_id=NULL WHERE wallet_id=@p0", id); // 連結的目標改回手動存入
+            // 欠款本身(金額、已還)不變,只是不再經過這個錢包
+            Exec("UPDATE debts SET wallet_id=NULL WHERE wallet_id=@p0", id);
+            Exec("DELETE FROM debt_payments WHERE wallet_id=@p0", id);
             Exec("UPDATE wallets SET pay_wallet_id=NULL WHERE pay_wallet_id=@p0", id);
             Exec("DELETE FROM wallets WHERE id=@p0", id);
         });
@@ -519,25 +554,76 @@ namespace ZZZ
 
         // ---------- 欠款 ----------
         public List<DebtRow> Debts() => Query(
-            "SELECT id,person,direction,amount,paid,date,due,note FROM debts ORDER BY date DESC, id DESC",
-            r => new DebtRow(r.GetInt64(0), Str(r, 1), Str(r, 2), Num(r, 3), Num(r, 4), Str(r, 5), Str(r, 6), Str(r, 7)));
+            "SELECT d.id,d.person,d.direction,d.amount,d.paid,d.date,d.due,d.note,w.id,w.name," +
+            "(SELECT COUNT(*) FROM debt_payments WHERE debt_id = d.id) FROM debts d " +
+            "LEFT JOIN wallets w ON w.id = d.wallet_id ORDER BY d.date DESC, d.id DESC",
+            r => new DebtRow(r.GetInt64(0), Str(r, 1), Str(r, 2), Num(r, 3), Num(r, 4), Str(r, 5), Str(r, 6), Str(r, 7),
+                             r.IsDBNull(8) ? null : r.GetInt64(8), Str(r, 9), r.GetInt32(10)));
 
-        public void AddDebt(string person, string direction, double amount, string date, string due, string note) =>
-            Exec("INSERT INTO debts(person,direction,amount,paid,date,due,note) VALUES(@p0,@p1,@p2,0,@p3,@p4,@p5)",
-                 person, direction, amount, date, due, note);
+        /// <param name="walletId">借出時從這個錢包付出、借入時存進這個錢包;null 為不經過錢包</param>
+        public void AddDebt(string person, string direction, double amount, string date, string due, string note, long? walletId = null) =>
+            Exec("INSERT INTO debts(person,direction,amount,paid,date,due,note,wallet_id) VALUES(@p0,@p1,@p2,0,@p3,@p4,@p5,@p6)",
+                 person, direction, amount, date, due, note, walletId);
 
         public void UpdateDebt(long id, string person, string direction, double amount, double paid,
-                               string date, string due, string note) =>
-            Exec("UPDATE debts SET person=@p0, direction=@p1, amount=@p2, paid=@p3, date=@p4, due=@p5, note=@p6 WHERE id=@p7",
-                 person, direction, amount, paid, date, due, note, id);
+                               string date, string due, string note, long? walletId) =>
+            Exec("UPDATE debts SET person=@p0, direction=@p1, amount=@p2, paid=@p3, date=@p4, due=@p5, note=@p6, wallet_id=@p7 WHERE id=@p8",
+                 person, direction, amount, paid, date, due, note, walletId, id);
 
-        public void PayDebt(long id, double amount) => Exec("UPDATE debts SET paid = paid + @p0 WHERE id=@p1", amount, id);
+        /// <summary>記錄還款;指定錢包時同時記一筆經過該錢包的還款(他欠我:錢進錢包;我欠他:錢從錢包付出)。</summary>
+        public void PayDebt(long id, double amount, long? walletId = null, string date = "", string note = "") => InTransaction(() =>
+        {
+            Exec("UPDATE debts SET paid = paid + @p0 WHERE id=@p1", amount, id);
+            if (walletId != null)
+                Exec("INSERT INTO debt_payments(debt_id,date,wallet_id,amount,note) VALUES(@p0,@p1,@p2,@p3,@p4)", id, date, walletId, amount, note);
+        });
 
         public void SettleDebts(IEnumerable<long> ids) =>
             InTransaction(() => { foreach (var id in ids) Exec("UPDATE debts SET paid = amount WHERE id=@p0", id); });
 
-        public void DeleteDebts(IEnumerable<long> ids) =>
-            InTransaction(() => { foreach (var id in ids) Exec("DELETE FROM debts WHERE id=@p0", id); });
+        /// <summary>刪除欠款與經過錢包的還款,相關錢包的餘額跟著還原。</summary>
+        public void DeleteDebts(IEnumerable<long> ids) => InTransaction(() =>
+        {
+            foreach (var id in ids)
+            {
+                Exec("DELETE FROM debt_payments WHERE debt_id=@p0", id);
+                Exec("DELETE FROM debts WHERE id=@p0", id);
+            }
+        });
+
+        /// <summary>經過錢包的借出/借入與還款,列在收支記錄清單裡(不算收入或支出)。</summary>
+        /// <param name="walletId">只列出經過這個錢包的;null 為全部</param>
+        public List<DebtMoveRow> DebtMoves(string month, long? walletId)
+        {
+            var filter = walletId != null ? " AND {0}.wallet_id = @p1" : "";
+            var sql =
+                "SELECT 0, d.id, d.id, d.date, w.id, w.name, d.person, d.direction, d.amount, d.note FROM debts d " +
+                "JOIN wallets w ON w.id = d.wallet_id WHERE d.date LIKE @p0" + string.Format(filter, "d") +
+                " UNION ALL SELECT 1, p.id, d.id, p.date, w.id, w.name, d.person, d.direction, p.amount, p.note FROM debt_payments p " +
+                "JOIN debts d ON d.id = p.debt_id JOIN wallets w ON w.id = p.wallet_id WHERE p.date LIKE @p0" + string.Format(filter, "p");
+            return Query(sql, r => new DebtMoveRow(r.GetInt64(1), Str(r, 3), r.GetInt64(2), r.GetInt64(0) == 1, r.GetInt64(4), Str(r, 5),
+                                                   Str(r, 6), Str(r, 7) == IOwe, Num(r, 8), Str(r, 9)),
+                         walletId != null ? new object?[] { month + "%", walletId } : [month + "%"]);
+        }
+
+        /// <summary>修改經過錢包的還款,欠款的已還金額跟著調整。</summary>
+        public void UpdateDebtPayment(long id, string date, long walletId, double amount, string note) => InTransaction(() =>
+        {
+            Exec("UPDATE debts SET paid = MAX(paid + @p0 - (SELECT amount FROM debt_payments WHERE id=@p1), 0) " +
+                 "WHERE id = (SELECT debt_id FROM debt_payments WHERE id=@p1)", amount, id);
+            Exec("UPDATE debt_payments SET date=@p0, wallet_id=@p1, amount=@p2, note=@p3 WHERE id=@p4", date, walletId, amount, note, id);
+        });
+
+        /// <summary>刪除經過錢包的還款,欠款的已還金額扣回來。</summary>
+        public void DeleteDebtPayments(IEnumerable<long> ids) => InTransaction(() =>
+        {
+            foreach (var id in ids)
+            {
+                Exec("UPDATE debts SET paid = MAX(paid - (SELECT amount FROM debt_payments WHERE id=@p0), 0) " +
+                     "WHERE id = (SELECT debt_id FROM debt_payments WHERE id=@p0)", id);
+                Exec("DELETE FROM debt_payments WHERE id=@p0", id);
+            }
+        });
 
         // ---------- 存錢目標 ----------
         public List<GoalRow> Goals() => Query(
@@ -598,7 +684,7 @@ namespace ZZZ
         public void DeleteDeposit(long id) => Exec("DELETE FROM goal_deposits WHERE id=@p0", id);
 
         // ---------- 匯出 / 匯入 ----------
-        public static readonly string[] Tables = ["wallets", "categories", "records", "transfers", "debts", "goals", "goal_deposits"];
+        public static readonly string[] Tables = ["wallets", "categories", "records", "transfers", "debts", "debt_payments", "goals", "goal_deposits"];
 
         /// <summary>讀出整張表(含 rowid 順序),供完整備份使用。</summary>
         public List<Dictionary<string, object?>> Dump(string table)

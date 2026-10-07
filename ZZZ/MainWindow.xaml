@@ -745,10 +745,11 @@
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition MinWidth="70"/>
-                                <ColumnDefinition Width="176"/>
-                                <ColumnDefinition Width="96"/>
-                                <ColumnDefinition Width="142"/>
-                                <ColumnDefinition Width="142"/>
+                                <ColumnDefinition Width="164"/>
+                                <ColumnDefinition Width="84"/>
+                                <ColumnDefinition Width="120"/>
+                                <ColumnDefinition Width="136"/>
+                                <ColumnDefinition Width="136"/>
                                 <ColumnDefinition Width="1.2*" MinWidth="70"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
@@ -761,9 +762,9 @@
                                 <Border Style="{StaticResource SegmentHost}">
                                     <UniformGrid Rows="1">
                                         <RadioButton x:Name="DebtIOwe" Style="{StaticResource Segment}" Content="我欠別人"
-                                                     IsChecked="True" GroupName="DebtDir"/>
+                                                     IsChecked="True" GroupName="DebtDir" Checked="DebtDir_Checked"/>
                                         <RadioButton x:Name="DebtTheyOwe" Style="{StaticResource Segment}" Content="別人欠我"
-                                                     GroupName="DebtDir"/>
+                                                     GroupName="DebtDir" Checked="DebtDir_Checked"/>
                                     </UniformGrid>
                                 </Border>
                             </StackPanel>
@@ -772,18 +773,23 @@
                                 <TextBox x:Name="DebtAmount" Tag="0" KeyDown="DebtForm_KeyDown"/>
                             </StackPanel>
                             <StackPanel Grid.Column="3" Margin="0,0,10,0">
+                                <TextBlock x:Name="DebtWalletLabel" Text="存進錢包" Style="{StaticResource FieldLabel}"/>
+                                <ComboBox x:Name="DebtWallet" AutomationProperties.Name="欠款錢包"
+                                          ToolTip="借來的錢存進哪個錢包;選「不經過錢包」就不影響錢包餘額"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="4" Margin="0,0,10,0">
                                 <TextBlock Text="借款日期" Style="{StaticResource FieldLabel}"/>
                                 <DatePicker x:Name="DebtDate"/>
                             </StackPanel>
-                            <StackPanel Grid.Column="4" Margin="0,0,10,0">
+                            <StackPanel Grid.Column="5" Margin="0,0,10,0">
                                 <TextBlock Text="到期日(可空白)" Style="{StaticResource FieldLabel}"/>
                                 <DatePicker x:Name="DebtDue"/>
                             </StackPanel>
-                            <StackPanel Grid.Column="5" Margin="0,0,10,0">
+                            <StackPanel Grid.Column="6" Margin="0,0,10,0">
                                 <TextBlock Text="備註" Style="{StaticResource FieldLabel}"/>
                                 <TextBox x:Name="DebtNote" Tag="選填" KeyDown="DebtForm_KeyDown"/>
                             </StackPanel>
-                            <Button Grid.Column="6" Style="{StaticResource AccentButton}" VerticalAlignment="Bottom"
+                            <Button Grid.Column="7" Style="{StaticResource AccentButton}" VerticalAlignment="Bottom"
                                     Click="AddDebt_Click" Padding="20,0">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="&#xE710;" Style="{StaticResource Icon}" FontSize="12"/>
@@ -859,6 +865,7 @@
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="錢包" Binding="{Binding WalletName}" Width="96" ElementStyle="{StaticResource CellMuted}"/>
                                 <DataGridTextColumn Header="總額" Binding="{Binding Amount, StringFormat=N0}" Width="84"
                                                     HeaderStyle="{StaticResource RightHeader}" ElementStyle="{StaticResource CellNumber}"/>
                                 <DataGridTextColumn Header="已還" Binding="{Binding Paid, StringFormat=N0}" Width="84"

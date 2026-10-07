@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
@@ -141,7 +141,12 @@ namespace ZZZ
             var current = (RecWallet.SelectedItem as Wallet)?.Id;
             RecWallet.ItemsSource = wallets;
             RecWallet.SelectedItem = wallets.FirstOrDefault(w => w.Id == (selWallet ?? current)) ?? wallets.FirstOrDefault();
+            var debtWallet = DebtWallet.SelectedItem as string;
+            var opts = DebtWalletOptions(wallets);
+            DebtWallet.ItemsSource = opts;
+            DebtWallet.SelectedItem = opts.Contains(debtWallet ?? "") ? debtWallet : NoDebtWallet;
             RefreshRecords();
+            RefreshDebts(); // 欠款清單的錢包名稱(錢包改名或刪除後)
         }
 
         void RefreshSidebar()
@@ -287,12 +292,7 @@ namespace ZZZ
             {
                 if (vals[0] == vals[1]) return "轉出和轉入不能是同一個錢包";
                 if (!DialogWindow.TryParseAmount(vals[2], out var a) || a <= 0) return "金額需大於 0";
-                var src = wallets.First(w => w.Name == vals[0]);
-                var free = WalletFree(src.Id);
-                if (a > free + 0.0001)
-                    return free < src.Balance - 0.0001
-                        ? $"「{src.Name}」可以轉出的只有 {Money(Math.Max(free, 0))}(其餘已分配給存錢目標)"
-                        : $"「{src.Name}」的餘額只有 {Money(Math.Max(src.Balance, 0))}";
+                if (CheckOutflow(wallets.First(w => w.Name == vals[0]), a) is string err) return err;
                 if (!DateTime.TryParse(vals[3], out _)) return "日期格式為 YYYY-MM-DD";
                 return null;
             }, "轉帳");
@@ -301,6 +301,16 @@ namespace ZZZ
             db.AddTransfer(NormalizeDate(v[3]), wallets.First(w => w.Name == v[0]).Id, wallets.First(w => w.Name == v[1]).Id, amt, v[4]);
             RefreshSidebar();
             RefreshRecords();
+        }
+
+        /// <summary>從錢包付出 amount(轉出、借出、還錢):不能超過餘額扣掉分配給存錢目標的錢。</summary>
+        string? CheckOutflow(Wallet src, double amount)
+        {
+            var free = WalletFree(src.Id);
+            if (amount <= free + 0.0001) return null;
+            return free < src.Balance - 0.0001
+                ? $"「{src.Name}」可以轉出的只有 {Money(Math.Max(free, 0))}(其餘已分配給存錢目標)"
+                : $"「{src.Name}」的餘額只有 {Money(Math.Max(src.Balance, 0))}";
         }
 
         // ---------- 信用卡 ----------
@@ -369,6 +379,7 @@ namespace ZZZ
                     if (vals[1] != Database.CreditCard) return null;
                     if (db.Goals().Any(g => g.WalletId == id)) return "這個錢包放了存錢目標,不能改成信用卡";
                     if (wallets.Any(c => c.IsCard && c.PayWalletId == id)) return "有信用卡從這個錢包繳卡費,不能改成信用卡";
+                    if (db.WalletDebtCount(id) > 0) return "有欠款經過這個錢包,不能改成信用卡";
                     if (payers.Count == 0) return "要先有另一個一般錢包,信用卡才能從它繳卡費";
                     return null;
                 });
@@ -488,18 +499,19 @@ namespace ZZZ
         {
             RefreshSidebar();
             RefreshRecords();
-            RecordGrid.SelectedItem = ((List<RecordRow>)RecordGrid.ItemsSource).FirstOrDefault(x => x.IsTransfer && x.Id == t.Id);
+            RecordGrid.SelectedItem = ((List<RecordRow>)RecordGrid.ItemsSource).FirstOrDefault(x => x is TransferRow && x.Id == t.Id);
         }
 
         void DeleteWallet_Click(object sender, RoutedEventArgs e)
         {
             if (WalletList.SelectedItem is not WalletItem { Id: long id } item) return;
             if (db.WalletCount() <= 1) { DialogWindow.Info(this, "提示", "至少要保留一個錢包"); return; }
-            int n = db.WalletRecordCount(id), t = db.WalletTransferCount(id);
+            int n = db.WalletRecordCount(id), t = db.WalletTransferCount(id), debts = db.WalletDebtCount(id);
             if (!DialogWindow.Confirm(this, "刪除錢包",
                     $"刪除「{item.Name}」,並一併刪除其中 {n} 筆記錄?\n" +
                     (item.Goal != "" ? $"存錢目標「{item.Goal}」會改成不指定錢包(已存金額不變)。\n" : "") +
                     (t > 0 ? $"和其他錢包之間的 {t} 筆轉帳(轉移資金、繳卡費),會改記成對方錢包的收支(對方餘額不變)。\n" : "") +
+                    (debts > 0 ? $"經過這個錢包的 {debts} 筆借款、還款會改成不經過錢包(欠款金額與已還金額不變)。\n" : "") +
                     "此動作無法復原。", "刪除", danger: true))
                 return;
             db.DeleteWallet(id);
@@ -535,9 +547,10 @@ namespace ZZZ
         void RefreshRecords()
         {
             var rows = FilteredRecords();
-            // 繳卡費(轉帳)也列在清單裡,但不算進收入、支出
+            // 轉帳(轉移資金、繳卡費)與經過錢包的借款、還款也列在清單裡,但不算進收入、支出
             var shown = catFilter == null
-                ? rows.Concat(db.Transfers(Month, selWallet)).OrderByDescending(r => r.Date, StringComparer.Ordinal).ToList()
+                ? rows.Concat(db.Transfers(Month, selWallet)).Concat(db.DebtMoves(Month, selWallet))
+                      .OrderByDescending(r => r.Date, StringComparer.Ordinal).ToList()
                 : rows;
             RecordGrid.ItemsSource = shown;
             CatChip.Visibility = catFilter == null ? Visibility.Collapsed : Visibility.Visible;
@@ -668,6 +681,7 @@ namespace ZZZ
                 return;
             }
             if (r is TransferRow t) { EditTransfer(t); return; }
+            if (r is DebtMoveRow m) { EditDebtMove(m); return; }
             var wallets = db.Wallets();
             var kinds = new List<string>();
             foreach (var type in new[] { Database.Expense, Database.Income })
@@ -694,7 +708,7 @@ namespace ZZZ
             db.UpdateRecord(r.Id, NormalizeDate(v[0]), parts[0], parts[1], amt, v[4], wallet.Id);
             RefreshSidebar();
             RefreshRecords();
-            RecordGrid.SelectedItem = ((List<RecordRow>)RecordGrid.ItemsSource).FirstOrDefault(x => !x.IsTransfer && x.Id == r.Id);
+            RecordGrid.SelectedItem = ((List<RecordRow>)RecordGrid.ItemsSource).FirstOrDefault(x => x.GetType() == typeof(RecordRow) && x.Id == r.Id);
         }
 
         void DeleteRecords_Click(object sender, RoutedEventArgs e) => DeleteRecords();
@@ -708,10 +722,49 @@ namespace ZZZ
         {
             var sel = RecordGrid.SelectedItems.Cast<RecordRow>().ToList();
             if (sel.Count == 0) { DialogWindow.Info(this, "提示", "請先在清單中選取要刪除的記錄(可按住 Ctrl 或 Shift 多選)。"); return; }
-            if (!DialogWindow.Confirm(this, "刪除記錄", $"確定刪除 {sel.Count} 筆記錄?", "刪除", danger: true)) return;
-            db.DeleteRecords(sel.Where(r => !r.IsTransfer).Select(r => r.Id), sel.Where(r => r.IsTransfer).Select(r => r.Id));
+            var moves = sel.OfType<DebtMoveRow>().ToList();
+            if (moves.Any(m => !m.Payment))
+            {
+                DialogWindow.Info(this, "提示", "「借出」「借入」那一筆就是欠款本身,請到「欠款紀錄」編輯或刪除。");
+                return;
+            }
+            if (!DialogWindow.Confirm(this, "刪除記錄", $"確定刪除 {sel.Count} 筆記錄?" +
+                    (moves.Count > 0 ? "\n刪掉的還款會從欠款的已還金額扣回來。" : ""), "刪除", danger: true)) return;
+            db.DeleteRecords(sel.Where(r => r.GetType() == typeof(RecordRow)).Select(r => r.Id), sel.OfType<TransferRow>().Select(t => t.Id));
+            db.DeleteDebtPayments(moves.Select(m => m.Id));
+            if (moves.Count > 0) RefreshDebts();
             RefreshSidebar();
             RefreshRecords();
+        }
+
+        /// <summary>
+        /// 清單裡欠款經過錢包的那幾列:借出/借入那一筆直接開「編輯欠款」;
+        /// 還款可改日期、錢包、金額、備註,欠款的已還金額跟著調整。
+        /// </summary>
+        void EditDebtMove(DebtMoveRow m)
+        {
+            if (db.Debts().FirstOrDefault(d => d.Id == m.DebtId) is not DebtRow debt) return;
+            if (!m.Payment) { EditDebt(debt); return; }
+            var ws = db.Wallets().Where(w => !w.IsCard).ToList();
+            var v = DialogWindow.Prompt(this, "編輯還款", $"{debt.Person}({debt.Direction})的還款。",
+            [
+                new Field("日期", m.Date, "點日曆選擇,或直接輸入 YYYY-MM-DD", IsDate: true),
+                new Field(m.IOwe ? "從哪個錢包付" : "存進哪個錢包", m.WalletName, Options: ws.Select(w => w.Name).ToArray()),
+                new Field("金額", m.Amount.ToString("0.##")),
+                new Field("備註(可空白)", m.Note),
+            ], vals =>
+            {
+                if (!DateTime.TryParse(vals[0], out _)) return "日期格式為 YYYY-MM-DD";
+                if (!DialogWindow.TryParseAmount(vals[2], out var a) || a <= 0) return "金額需大於 0";
+                if (a > debt.Rest + m.Amount + 0.0001) return "還款金額超過未還金額";
+                return null;
+            }, "儲存");
+            if (v == null) return;
+            DialogWindow.TryParseAmount(v[2], out var amt);
+            db.UpdateDebtPayment(m.Id, NormalizeDate(v[0]), ws.First(w => w.Name == v[1]).Id, amt, v[3]);
+            AfterDebtChange();
+            RecordGrid.SelectedItem = ((List<RecordRow>)RecordGrid.ItemsSource)
+                .FirstOrDefault(x => x is DebtMoveRow { Payment: true } p && p.Id == m.Id);
         }
 
         // ================= 匯出 / 匯入 =================
@@ -863,6 +916,31 @@ namespace ZZZ
 
         void AddDebt_Click(object sender, RoutedEventArgs e) => AddDebt();
 
+        // ---------- 欠款經過的錢包 ----------
+        const string NoDebtWallet = "不經過錢包";
+
+        /// <summary>欠款可選的錢包:「不經過錢包」加上信用卡以外的錢包。</summary>
+        static string[] DebtWalletOptions(IEnumerable<Wallet> wallets) => [NoDebtWallet, .. wallets.Where(w => !w.IsCard).Select(w => w.Name)];
+
+        Wallet? DebtWalletNamed(string? name) =>
+            name is null or NoDebtWallet ? null : db.Wallets().FirstOrDefault(w => w.Name == name && !w.IsCard);
+
+        /// <summary>借款、還款動到錢包後,欠款、側欄餘額、收支清單一起更新。</summary>
+        void AfterDebtChange()
+        {
+            RefreshDebts();
+            RefreshSidebar();
+            RefreshRecords();
+        }
+
+        void DebtDir_Checked(object sender, RoutedEventArgs e)
+        {
+            if (DebtWalletLabel == null) return;
+            bool owe = DebtIOwe.IsChecked == true;
+            DebtWalletLabel.Text = owe ? "存進錢包" : "從錢包借出";
+            DebtWallet.ToolTip = (owe ? "借來的錢存進哪個錢包" : "借出去的錢從哪個錢包付") + ";選「不經過錢包」就不影響錢包餘額";
+        }
+
         void AddDebt()
         {
             var person = DebtPerson.Text.Trim();
@@ -872,15 +950,22 @@ namespace ZZZ
                 DialogWindow.Error(this, "無法新增", "請確認:對象不可空白、金額需大於 0、日期格式為 YYYY-MM-DD。");
                 return;
             }
+            bool owe = DebtIOwe.IsChecked == true;
+            var wallet = DebtWalletNamed(DebtWallet.SelectedItem as string);
+            if (wallet != null && !owe && CheckOutflow(wallet, amt) is string err)
+            {
+                DialogWindow.Error(this, "無法新增", $"{err},借不出 {Money(amt)}。");
+                return;
+            }
             var due = DebtDue.SelectedDate?.ToString("yyyy-MM-dd") ?? "";
-            db.AddDebt(person, DebtIOwe.IsChecked == true ? Database.IOwe : Database.TheyOwe,
-                       amt, date.ToString("yyyy-MM-dd"), due, DebtNote.Text.Trim());
+            db.AddDebt(person, owe ? Database.IOwe : Database.TheyOwe,
+                       amt, date.ToString("yyyy-MM-dd"), due, DebtNote.Text.Trim(), wallet?.Id);
             DebtPerson.Clear();
             DebtAmount.Clear();
             DebtNote.Clear();
             DebtDue.SelectedDate = null;
             DebtPerson.Focus();
-            RefreshDebts();
+            if (wallet != null) AfterDebtChange(); else RefreshDebts();
         }
 
         void PayDebt_Click(object sender, RoutedEventArgs e) => PayDebt();
@@ -898,18 +983,28 @@ namespace ZZZ
                 return;
             }
             if (d.Done) { DialogWindow.Info(this, "提示", "這筆欠款已經還清了。"); return; }
-            var v = DialogWindow.Prompt(this, "記錄還款", $"{d.Person}({d.Direction})目前未還 {Money(d.Rest)}",
-                [new Field("本次還款金額", "", $"最多 {Money(d.Rest)}")],
-                vals =>
-                {
-                    if (!DialogWindow.TryParseAmount(vals[0], out var a) || a < 0.01) return "請輸入大於 0 的金額";
-                    if (a > d.Amount - d.Paid + 0.0001) return "還款金額超過未還金額";
-                    return null;
-                }, "記錄");
+            var options = DebtWalletOptions(db.Wallets());
+            var v = DialogWindow.Prompt(this, "記錄還款",
+                $"{d.Person}({d.Direction})目前未還 {Money(d.Rest)}\n" +
+                (d.IOwe ? "選錢包會從那個錢包付出還款。" : "選錢包會把收到的還款存進那個錢包。"),
+            [
+                new Field("本次還款金額", "", $"最多 {Money(d.Rest)}"),
+                new Field(d.IOwe ? "從哪個錢包付" : "存進哪個錢包", options.Contains(d.WalletName) ? d.WalletName : NoDebtWallet, Options: options),
+                new Field("還款日期", DateTime.Today.ToString("yyyy-MM-dd"), "點日曆選擇,或直接輸入 YYYY-MM-DD", IsDate: true),
+                new Field("備註(可空白)", ""),
+            ], vals =>
+            {
+                if (!DialogWindow.TryParseAmount(vals[0], out var a) || a < 0.01) return "請輸入大於 0 的金額";
+                if (a > d.Amount - d.Paid + 0.0001) return "還款金額超過未還金額";
+                if (!DateTime.TryParse(vals[2], out _)) return "日期格式為 YYYY-MM-DD";
+                if (d.IOwe && DebtWalletNamed(vals[1]) is Wallet w && CheckOutflow(w, a) is string err) return err;
+                return null;
+            }, "記錄");
             if (v == null) return;
             DialogWindow.TryParseAmount(v[0], out var amt);
-            db.PayDebt(d.Id, amt);
-            RefreshDebts();
+            var wallet = DebtWalletNamed(v[1]);
+            db.PayDebt(d.Id, amt, wallet?.Id, NormalizeDate(v[2]), v[3]);
+            if (wallet != null) AfterDebtChange(); else RefreshDebts();
         }
 
         void EditDebt_Click(object sender, RoutedEventArgs e)
@@ -919,12 +1014,19 @@ namespace ZZZ
                 DialogWindow.Info(this, "提示", "請先在清單中選取一筆欠款。");
                 return;
             }
-            var v = DialogWindow.Prompt(this, "編輯欠款", "",
+            EditDebt(d);
+        }
+
+        void EditDebt(DebtRow d)
+        {
+            var options = DebtWalletOptions(db.Wallets());
+            var v = DialogWindow.Prompt(this, "編輯欠款", "錢包:借出時從哪個錢包付、借入時存進哪個錢包。",
             [
                 new Field("對象", d.Person),
                 new Field("方向", d.Direction, Options: [Database.IOwe, Database.TheyOwe]),
                 new Field("金額", d.Amount.ToString("0.##")),
                 new Field("已還金額", d.Paid.ToString("0.##")),
+                new Field("錢包", options.Contains(d.WalletName) ? d.WalletName : NoDebtWallet, Options: options),
                 new Field("日期", d.Date, "點日曆選擇,或直接輸入 YYYY-MM-DD", IsDate: true),
                 new Field("到期日(可空白)", d.Due, "點日曆選擇,或直接輸入 YYYY-MM-DD", IsDate: true),
                 new Field("備註(可空白)", d.Note),
@@ -934,15 +1036,15 @@ namespace ZZZ
                 if (!DialogWindow.TryParseAmount(vals[2], out var a) || a <= 0) return "金額需大於 0";
                 if (!DialogWindow.TryParseAmount(vals[3] == "" ? "0" : vals[3], out var p) || p < 0) return "已還金額需為 0 或正數";
                 if (p > a + 0.0001) return "已還金額不能超過金額";
-                if (!DateTime.TryParse(vals[4], out _)) return "日期格式為 YYYY-MM-DD";
-                if (vals[5] != "" && !DateTime.TryParse(vals[5], out _)) return "到期日格式為 YYYY-MM-DD,或留空";
+                if (!DateTime.TryParse(vals[5], out _)) return "日期格式為 YYYY-MM-DD";
+                if (vals[6] != "" && !DateTime.TryParse(vals[6], out _)) return "到期日格式為 YYYY-MM-DD,或留空";
                 return null;
             }, "儲存");
             if (v == null) return;
             DialogWindow.TryParseAmount(v[2], out var amt);
             DialogWindow.TryParseAmount(v[3] == "" ? "0" : v[3], out var paid);
-            db.UpdateDebt(d.Id, v[0], v[1], amt, paid, NormalizeDate(v[4]), NormalizeDate(v[5]), v[6]);
-            RefreshDebts();
+            db.UpdateDebt(d.Id, v[0], v[1], amt, paid, NormalizeDate(v[5]), NormalizeDate(v[6]), v[7], DebtWalletNamed(v[4])?.Id);
+            AfterDebtChange();
             DebtGrid.SelectedItem = ((List<DebtRow>)DebtGrid.ItemsSource).FirstOrDefault(x => x.Id == d.Id);
         }
 
@@ -957,7 +1059,8 @@ namespace ZZZ
         void SettleDebts_Click(object sender, RoutedEventArgs e)
         {
             if (SelectedDebts() is not { } sel) return;
-            if (!DialogWindow.Confirm(this, "標記還清", $"將選取的 {sel.Count} 筆標記為已還清?")) return;
+            if (!DialogWindow.Confirm(this, "標記還清", $"將選取的 {sel.Count} 筆標記為已還清?" +
+                    (sel.Any(d => d.WalletId != null) ? "\n標記還清不會動到錢包餘額;要記錄錢進出錢包,請用「記錄還款」。" : ""))) return;
             db.SettleDebts(sel.Select(d => d.Id));
             RefreshDebts();
         }
@@ -972,9 +1075,11 @@ namespace ZZZ
         void DeleteDebts()
         {
             if (SelectedDebts() is not { } sel) return;
-            if (!DialogWindow.Confirm(this, "刪除欠款", $"確定刪除 {sel.Count} 筆欠款記錄?", "刪除", danger: true)) return;
+            bool moved = sel.Any(d => d.WalletId != null || d.Payments > 0);
+            if (!DialogWindow.Confirm(this, "刪除欠款", $"確定刪除 {sel.Count} 筆欠款記錄?" +
+                    (moved ? "\n經過錢包的借款與還款會一起刪除,錢包餘額會跟著還原。" : ""), "刪除", danger: true)) return;
             db.DeleteDebts(sel.Select(d => d.Id));
-            RefreshDebts();
+            if (moved) AfterDebtChange(); else RefreshDebts();
         }
 
         // ================= 存錢目標 =================
