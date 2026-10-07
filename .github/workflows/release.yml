@@ -67,6 +67,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item dist\portable\Ledger.exe dist\Ledger.exe
 
+      # 給 APP 啟動器用。不包成單一執行檔:開著「智慧型應用程式控制」的電腦
+      # 會擋下沒有簽章的單一執行檔,一般資料夾形式則可以正常執行
+      - name: 資料夾版(內含 .NET 執行環境)
+        shell: pwsh
+        run: |
+          dotnet publish ZZZ\ZZZ.csproj -c Release -r win-x64 -p:SelfContained=true `
+            -p:PublishSingleFile=false -p:DebugType=none `
+            -p:Version=${{ steps.ver.outputs.version }} -o dist\folder
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path dist\folder\Ledger.dll)) { throw "missing Ledger.dll" }
+          Compress-Archive -Path dist\folder\* -DestinationPath "dist\Ledger-Folder-v${{ steps.ver.outputs.version }}.zip"
+
       - uses: softprops/action-gh-release@v2
         with:
           name: 簡易記帳 v${{ steps.ver.outputs.version }}
@@ -75,9 +87,11 @@ jobs:
             ## 下載
             - **Ledger-ClickOnce-v${{ steps.ver.outputs.version }}.zip**:解壓縮後執行 `安裝.cmd` 安裝(會建立開始選單與桌面捷徑)。已安裝的電腦按「檢查更新」,會直接下載這個安裝包升級。
             - **Ledger.exe**:免安裝版,直接執行。
+            - **Ledger-Folder-v${{ steps.ver.outputs.version }}.zip**:資料夾版,解壓縮後執行 `Ledger.exe`。APP 啟動器下載的是這個;Windows「智慧型應用程式控制」擋下單一執行檔時也可以改用它。
 
-            兩種版本都已內含 .NET 執行環境,不需要另外安裝 .NET。
+            每種版本都已內含 .NET 執行環境,不需要另外安裝 .NET。
             記帳資料存放在 `%APPDATA%\Ledger`,更新或重新安裝都不會遺失。
           files: |
             dist/Ledger-ClickOnce-v${{ steps.ver.outputs.version }}.zip
             dist/Ledger.exe
+            dist/Ledger-Folder-v${{ steps.ver.outputs.version }}.zip
